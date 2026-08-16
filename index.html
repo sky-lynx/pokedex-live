@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Interactive Pokédex</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">Live Pokédex</p>
+        <h1>Interactive Pokémon Explorer</h1>
+        <p class="hero-copy">Data loads directly from the published Google Sheet and updates your Pokémon profile in real time.</p>
+      </div>
+      <div class="hero-actions">
+        <button id="randomButton" class="button button-primary">Random Pokémon</button>
+        <div id="status" class="status-message">Loading sheet data...</div>
+      </div>
+    </header>
+
+    <main class="layout">
+      <aside class="panel panel-left">
+        <section class="list-card">
+          <div class="search-row">
+            <label for="searchInput">Search Pokémon</label>
+            <input id="searchInput" type="search" placeholder="Type name, number, or type..." autocomplete="off" />
+          </div>
+
+          <div class="section-header">
+            <h2>Pokémon</h2>
+            <span id="listCount" class="small">0 available</span>
+          </div>
+          <div id="pokemonList" class="pokemon-list"></div>
+        </section>
+
+        <section class="type-filter-card">
+          <div class="section-header">
+            <h2>Filters</h2>
+            <button id="clearFiltersButton" type="button" class="filters-button">Clear filters</button>
+          </div>
+
+          <div class="filter-tabs" role="tablist">
+            <button type="button" class="filter-tab active" data-panel="type">Type</button>
+            <button type="button" class="filter-tab" data-panel="typing">Typing</button>
+            <button type="button" class="filter-tab" data-panel="generation">Gen</button>
+            <button type="button" class="filter-tab" data-panel="baseStats">Base Stats</button>
+            <button type="button" class="filter-tab" data-panel="yields">Yields</button>
+            <button type="button" class="filter-tab" data-panel="extra">Extra</button>
+          </div>
+
+          <div id="filterPanels">
+            <div id="panel-type" class="filter-panel">
+              <div class="logic-toggle">
+                <button id="logicAnd" type="button" class="button">AND</button>
+                <button id="logicOr" type="button" class="button active">OR</button>
+              </div>
+              <div id="typeButtons" class="type-buttons"></div>
+            </div>
+
+            <div id="panel-typing" class="filter-panel" style="display:none">
+              <div class="filter-grid">
+                <label class="radio-button"><input type="radio" name="typingFilter" value="any" checked /><span>Any</span></label>
+                <label class="radio-button"><input type="radio" name="typingFilter" value="monotype" /><span>Monotype</span></label>
+                <label class="radio-button"><input type="radio" name="typingFilter" value="dual" /><span>Dual-type</span></label>
+              </div>
+            </div>
+
+            <div id="panel-generation" class="filter-panel" style="display:none">
+              <div class="generation-grid">
+                <button type="button" class="generation-button active" data-generation="any">All</button>
+                <button type="button" class="generation-button" data-generation="1">Gen 1</button>
+                <button type="button" class="generation-button" data-generation="2">Gen 2</button>
+                <button type="button" class="generation-button" data-generation="3">Gen 3</button>
+                <button type="button" class="generation-button" data-generation="4">Gen 4</button>
+                <button type="button" class="generation-button" data-generation="5">Gen 5</button>
+                <button type="button" class="generation-button" data-generation="6">Gen 6</button>
+                <button type="button" class="generation-button" data-generation="7">Gen 7</button>
+                <button type="button" class="generation-button" data-generation="8">Gen 8</button>
+                <button type="button" class="generation-button" data-generation="9">Gen 9</button>
+              </div>
+            </div>
+
+            <div id="panel-baseStats" class="filter-panel" style="display:none">
+              <div class="filter-grid stats-grid">
+                <!-- rows for HP, ATK, DEF, SpA, SpD, SPE, TOTAL -->
+              </div>
+            </div>
+
+            <div id="panel-yields" class="filter-panel" style="display:none">
+              <div class="filter-grid yields-grid">
+                <!-- EV, Base XP, Base Friendship rows (filled by script) -->
+              </div>
+            </div>
+
+            <div id="panel-extra" class="filter-panel" style="display:none">
+              <div class="filter-grid extra-grid">
+                <label>Height (m) min <input id="heightMin" type="number" step="0.01" /></label>
+                <label>Height (m) max <input id="heightMax" type="number" step="0.01" /></label>
+                <label>Weight (kg) min <input id="weightMin" type="number" step="0.1" /></label>
+                <label>Weight (kg) max <input id="weightMax" type="number" step="0.1" /></label>
+                <label>Catch rate min <input id="catchMin" type="number" /></label>
+                <label>Catch rate max <input id="catchMax" type="number" /></label>
+                <label>Dex # min <input id="dexMin" type="number" /></label>
+                <label>Dex # max <input id="dexMax" type="number" /></label>
+              </div>
+            </div>
+          </div>
+        </section>
+      </aside>
+
+      <section class="panel panel-right" id="detailsPanel">
+        <div id="details" class="details-placeholder">
+          <h2>Pokémon details will appear here</h2>
+          <p>Choose a Pokémon from the list or search for one by name.</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
