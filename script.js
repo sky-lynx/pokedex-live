@@ -1101,9 +1101,9 @@ function renderDetails(pokemon) {
                 ${renderMetaItem('Shape', pokemon.shape)}
                 ${renderMetaItem('Color', pokemon.color)}
                 ${renderMetaItem('Egg Group', `${pokemon.eggGroup1}${pokemon.eggGroup2 ? ' / ' + pokemon.eggGroup2 : ''}`)}
-                ${renderMetaItem('Egg Cycles', pokemon.eggCycles)}
-                ${renderMetaItem('Catch Rate', pokemon.catchRate)}
-                ${renderMetaItem('Level Rate', pokemon.levelRate)}
+                ${renderMetaItem('Egg Cycles', pokemon.eggCycles, '', 'egg-cycles', pokemon.eggSteps)}
+                ${renderMetaItem('Catch Rate', pokemon.catchRate, '', 'catch-rate')}
+                ${renderMetaItem('Level Rate', pokemon.levelRate, '', 'level-rate', pokemon.totalXP)}
               </div>
             </div>
           </section>
@@ -1116,13 +1116,13 @@ function renderDetails(pokemon) {
             <h2>Base Stats</h2>
           </div>
           <div class="stat-bars">
-            ${renderStatBar('HP', pokemon.baseStats.HP, 260)}
-            ${renderStatBar('ATK', pokemon.baseStats.ATK, 260)}
-            ${renderStatBar('DEF', pokemon.baseStats.DEF, 260)}
-            ${renderStatBar('SpA', pokemon.baseStats.SpA, 260)}
-            ${renderStatBar('SpD', pokemon.baseStats.SpD, 260)}
-            ${renderStatBar('SPE', pokemon.baseStats.SPE, 260)}
-            ${renderStatBar('TOTAL', pokemon.baseStats.total, 1300)}
+            ${renderStatBar('HP', pokemon.baseStats.HP, 260, 'base', pokemon.number)}
+            ${renderStatBar('ATK', pokemon.baseStats.ATK, 260, 'base', pokemon.number)}
+            ${renderStatBar('DEF', pokemon.baseStats.DEF, 260, 'base', pokemon.number)}
+            ${renderStatBar('SpA', pokemon.baseStats.SpA, 260, 'base', pokemon.number)}
+            ${renderStatBar('SpD', pokemon.baseStats.SpD, 260, 'base', pokemon.number)}
+            ${renderStatBar('SPE', pokemon.baseStats.SPE, 260, 'base', pokemon.number)}
+            ${renderStatBar('TOTAL', pokemon.baseStats.total, 1300, 'base', pokemon.number)}
           </div>
         </section>
 
@@ -1139,8 +1139,8 @@ function renderDetails(pokemon) {
             ${renderStatBar('SPE', pokemon.evStats.SPE, 4)}
           </div>
           <div class="ev-summary">
-            ${renderMetaItem('Base XP', pokemon.xp)}
-            ${renderMetaItem('Base Friendship', pokemon.baseFriendship)}
+            ${renderMetaItem('Base XP', pokemon.xp, 'xp')}
+            ${renderMetaItem('Base Friendship', pokemon.baseFriendship, 'baseFriendship')}
           </div>
         </section>
       </div>
@@ -1187,7 +1187,7 @@ function renderDetails(pokemon) {
               const statusLabel = game.status === 'available' ? 'Available' : game.status === 'transfer' ? 'Transfer' : 'Missing';
               return `
               <div class="value-pill">
-                <div class="game-pill" style="background: ${badgeBg}; border-color: ${borderColor}; color: #ffffff;">
+                <div class="game-pill" data-game-name="${escapeHtml(game.gameName)}" data-game-color="${escapeHtml(gameColor)}" style="background: ${badgeBg}; border-color: ${borderColor}; color: #ffffff;">
                   <span>${game.label}</span>
                 </div>
                 <strong class="status-chip ${statusClass}">${statusLabel}</strong>
@@ -1226,6 +1226,8 @@ function renderDetails(pokemon) {
   });
 
   attachTypeHoverHandlers();
+  attachGameHoverHandlers();
+  attachBaseStatHoverHandlers();
   attachMoveHoverHandlers();
 }
 
@@ -1289,8 +1291,11 @@ function renderAbilityBox(ability, hidden = false) {
   `;
 }
 
-function renderMetaItem(label, value) {
-  return `<div class="meta-item"><strong>${label}</strong><p>${value || '—'}</p></div>`;
+function renderMetaItem(label, value, rankingKey = '', metaType = '', metaExtra = '') {
+  const rankingAttributes = rankingKey
+    ? ` class="meta-item ranking-meta-item" data-ranking-key="${escapeHtml(rankingKey)}" data-ranking-value="${escapeHtml(value)}"`
+    : ` class="meta-item${metaType ? ` ${metaType}-meta-item` : ''}"${metaType ? ` data-meta-value="${escapeHtml(value)}" data-meta-extra="${escapeHtml(metaExtra)}"` : ''}`;
+  return `<div${rankingAttributes}><strong>${label}</strong><p>${value || '—'}</p></div>`;
 }
 
 function renderAbilityBox(ability, hidden = false) {
@@ -1315,10 +1320,10 @@ function renderSize(pokemon) {
   return `${height} · ${weight}`;
 }
 
-function renderStatBar(label, value, max) {
+function renderStatBar(label, value, max, statScope = '', statDex = '') {
   const percent = max ? Math.round((Number(value) / max) * 100) : 0;
   return `
-    <div class="stat-line">
+    <div class="stat-line${statScope === 'base' ? ' base-stat-line' : ''}"${statScope === 'base' ? ` data-stat-key="${escapeHtml(label)}" data-stat-value="${escapeHtml(value)}" data-stat-dex="${escapeHtml(statDex)}"` : ''}>
       <div class="stat-row"><span>${label}</span><span>${value}</span></div>
       <div class="bar-track">
         <div class="bar-fill" style="--fill-width: ${percent}%"></div>
@@ -1522,6 +1527,7 @@ function formatTypeMultiplier(value) {
 function showTypePopup(typeName, clientX, clientY, targetElement) {
   createMovePopup();
   const popup = document.getElementById('move-popup');
+  resetPopupTheme(popup);
   const offenseRows = getTypeOffensiveSummary(typeName);
   const defenseRows = getTypeDefensiveSummary(typeName);
   const color = TYPE_COLORS[typeName] || '#475569';
@@ -1579,6 +1585,51 @@ function showTypePopup(typeName, clientX, clientY, targetElement) {
   }
 }
 
+function resetPopupTheme(popup) {
+  popup.style.background = '';
+  popup.style.borderColor = '';
+  popup.style.boxShadow = '';
+}
+
+function showGamePopup(gameName, gameColor, clientX, clientY, targetElement) {
+  createMovePopup();
+  const popup = document.getElementById('move-popup');
+  const safeColor = gameColor || '#94a3b8';
+  popup.style.background = `linear-gradient(135deg, ${hexToRgba(safeColor, 0.96)}, rgba(15, 23, 32, 0.98))`;
+  popup.style.borderColor = hexToRgba(safeColor, 0.8);
+  popup.style.boxShadow = `0 12px 36px ${hexToRgba(safeColor, 0.42)}`;
+  popup.innerHTML = `
+    <div style="font-size:10px;letter-spacing:.16em;text-transform:uppercase;text-align:center;color:rgba(255,255,255,.78);margin-bottom:7px;">Game</div>
+    <div style="font-size:20px;line-height:1.15;font-weight:800;text-align:center;color:#ffffff;">${escapeHtml(gameName)}</div>
+  `;
+  popup.setAttribute('aria-hidden', 'false');
+  if (!popup.classList.contains('visible')) popup.classList.add('visible');
+
+  const offset = 8;
+  const width = popup.offsetWidth || 220;
+  const height = popup.offsetHeight || 54;
+  let left = clientX + offset;
+  let top = clientY + offset;
+
+  if (targetElement && typeof targetElement.getBoundingClientRect === 'function') {
+    const rect = targetElement.getBoundingClientRect();
+    left = Math.round(rect.left + rect.width / 2 - width / 2);
+    top = rect.top - height - offset;
+    if (top < 8) top = rect.bottom + offset;
+  }
+
+  if (left < 8) left = 8;
+  if (left + width + 8 > window.innerWidth) left = Math.max(8, window.innerWidth - width - 8);
+  if (top + height + 8 > window.innerHeight) top = Math.max(8, window.innerHeight - height - 8);
+  popup.style.left = `${Math.max(8, Math.round(left))}px`;
+  popup.style.top = `${Math.max(8, Math.round(top))}px`;
+
+  if (movePopupHideTimer) {
+    clearTimeout(movePopupHideTimer);
+    movePopupHideTimer = null;
+  }
+}
+
 function attachTypeHoverHandlers() {
   const container = elements.details;
   if (!container) return;
@@ -1604,6 +1655,323 @@ function attachTypeHoverHandlers() {
     });
 
     button.dataset.typeHoverBound = '1';
+  });
+}
+
+function attachGameHoverHandlers() {
+  const container = elements.details;
+  if (!container) return;
+
+  container.querySelectorAll('.game-pill').forEach((pill) => {
+    if (pill.dataset.gameHoverBound === '1') return;
+    const gameName = pill.dataset.gameName;
+    if (!gameName) return;
+
+    pill.addEventListener('mouseenter', (event) => {
+      showGamePopup(gameName, pill.dataset.gameColor, event.clientX, event.clientY, pill);
+    });
+    pill.addEventListener('mousemove', (event) => {
+      showGamePopup(gameName, pill.dataset.gameColor, event.clientX, event.clientY, pill);
+    });
+    pill.addEventListener('mouseleave', () => {
+      if (movePopupHideTimer) clearTimeout(movePopupHideTimer);
+      movePopupHideTimer = setTimeout(hideMovePopup, 180);
+    });
+
+    pill.dataset.gameHoverBound = '1';
+  });
+}
+
+function getDexNumber(pokemon) {
+  return Number(String(pokemon.number || '').replace(/^0+/, '')) || Number.MAX_SAFE_INTEGER;
+}
+
+function getNumericRanking(source, key, value, dexNumber) {
+  const lookupKey = key === 'TOTAL' ? 'total' : key;
+  const statEntries = allPokemon
+    .map((pokemon) => ({
+      value: Number(source === 'baseStats' ? pokemon.baseStats?.[lookupKey] : pokemon[lookupKey]),
+      dexNumber: getDexNumber(pokemon)
+    }))
+    .filter((entry) => Number.isFinite(entry.value));
+
+  if (!statEntries.length) return null;
+
+  const sortedEntries = [...statEntries].sort((left, right) => (
+    right.value - left.value || left.dexNumber - right.dexNumber
+  ));
+  const rank = sortedEntries.findIndex((entry) => entry.value === value && entry.dexNumber === dexNumber) + 1;
+  const atOrBelow = statEntries.filter((entry) => entry.value <= value).length;
+
+  return {
+    rank,
+    count: statEntries.length,
+    percentile: Math.round((atOrBelow / statEntries.length) * 100)
+  };
+}
+
+function showBaseStatPopup(label, value, dexNumber, clientX, clientY, targetElement, source = 'baseStats', rankingKey = label, heading = 'Base Stat') {
+  createMovePopup();
+  const popup = document.getElementById('move-popup');
+  resetPopupTheme(popup);
+  const ranking = getNumericRanking(source, rankingKey, value, dexNumber);
+  if (!ranking) return;
+
+  popup.innerHTML = `
+    <div style="font-size:10px;letter-spacing:.16em;text-transform:uppercase;text-align:center;color:#93c5fd;margin-bottom:7px;">${escapeHtml(heading)}</div>
+    <div style="font-size:20px;line-height:1.15;font-weight:800;text-align:center;color:#ffffff;margin-bottom:8px;">${escapeHtml(value)} ${escapeHtml(label)}</div>
+    <div style="text-align:center;color:#dbeafe;font-weight:700;">${ranking.percentile}% percentile</div>
+    <div style="text-align:center;color:#cbd5e1;margin-top:4px;">Rank ${ranking.rank} / ${ranking.count}</div>
+  `;
+  popup.setAttribute('aria-hidden', 'false');
+  if (!popup.classList.contains('visible')) popup.classList.add('visible');
+
+  const offset = 8;
+  const width = popup.offsetWidth || 220;
+  const height = popup.offsetHeight || 100;
+  let left = clientX + offset;
+  let top = clientY + offset;
+
+  if (targetElement && typeof targetElement.getBoundingClientRect === 'function') {
+    const rect = targetElement.getBoundingClientRect();
+    left = Math.round(rect.left + rect.width / 2 - width / 2);
+    top = rect.top - height - offset;
+    if (top < 8) top = rect.bottom + offset;
+  }
+
+  if (left < 8) left = 8;
+  if (left + width + 8 > window.innerWidth) left = Math.max(8, window.innerWidth - width - 8);
+  if (top + height + 8 > window.innerHeight) top = Math.max(8, window.innerHeight - height - 8);
+  popup.style.left = `${Math.max(8, Math.round(left))}px`;
+  popup.style.top = `${Math.max(8, Math.round(top))}px`;
+
+  if (movePopupHideTimer) {
+    clearTimeout(movePopupHideTimer);
+    movePopupHideTimer = null;
+  }
+}
+
+function showCatchRatePopup(catchRate, clientX, clientY, targetElement) {
+  createMovePopup();
+  const popup = document.getElementById('move-popup');
+  resetPopupTheme(popup);
+  const catchChance = Math.pow(catchRate / 765, 0.75) * 100;
+  const formattedChance = Number.isFinite(catchChance) ? catchChance.toFixed(1) : '-';
+
+  popup.innerHTML = `
+    <div style="font-size:10px;letter-spacing:.16em;text-transform:uppercase;text-align:center;color:#93c5fd;margin-bottom:7px;">Catch Chance</div>
+    <div style="font-size:20px;line-height:1.15;font-weight:800;text-align:center;color:#ffffff;margin-bottom:8px;">${escapeHtml(formattedChance)}%</div>
+    <div style="text-align:center;color:#dbeafe;font-weight:700;">Catch Rate: ${escapeHtml(catchRate)}</div>
+    <div style="text-align:center;color:#cbd5e1;margin-top:4px;">Full HP - Regular Poke Ball</div>
+  `;
+  popup.setAttribute('aria-hidden', 'false');
+  if (!popup.classList.contains('visible')) popup.classList.add('visible');
+
+  const offset = 8;
+  const width = popup.offsetWidth || 220;
+  const height = popup.offsetHeight || 100;
+  let left = clientX + offset;
+  let top = clientY + offset;
+
+  if (targetElement && typeof targetElement.getBoundingClientRect === 'function') {
+    const rect = targetElement.getBoundingClientRect();
+    left = Math.round(rect.left + rect.width / 2 - width / 2);
+    top = rect.top - height - offset;
+    if (top < 8) top = rect.bottom + offset;
+  }
+
+  if (left < 8) left = 8;
+  if (left + width + 8 > window.innerWidth) left = Math.max(8, window.innerWidth - width - 8);
+  if (top + height + 8 > window.innerHeight) top = Math.max(8, window.innerHeight - height - 8);
+  popup.style.left = `${Math.max(8, Math.round(left))}px`;
+  popup.style.top = `${Math.max(8, Math.round(top))}px`;
+
+  if (movePopupHideTimer) {
+    clearTimeout(movePopupHideTimer);
+    movePopupHideTimer = null;
+  }
+}
+
+function showLevelRatePopup(levelRate, totalXP, clientX, clientY, targetElement) {
+  createMovePopup();
+  const popup = document.getElementById('move-popup');
+  resetPopupTheme(popup);
+
+  popup.innerHTML = `
+    <div style="font-size:10px;letter-spacing:.16em;text-transform:uppercase;text-align:center;color:#93c5fd;margin-bottom:7px;">Level Rate</div>
+    <div style="font-size:20px;line-height:1.15;font-weight:800;text-align:center;color:#ffffff;margin-bottom:8px;">${escapeHtml(levelRate || '-')}</div>
+    <div style="text-align:center;color:#dbeafe;font-weight:700;">XP needed: ${escapeHtml(totalXP || '-')}</div>
+  `;
+  popup.setAttribute('aria-hidden', 'false');
+  if (!popup.classList.contains('visible')) popup.classList.add('visible');
+
+  const offset = 8;
+  const width = popup.offsetWidth || 220;
+  const height = popup.offsetHeight || 90;
+  let left = clientX + offset;
+  let top = clientY + offset;
+
+  if (targetElement && typeof targetElement.getBoundingClientRect === 'function') {
+    const rect = targetElement.getBoundingClientRect();
+    left = Math.round(rect.left + rect.width / 2 - width / 2);
+    top = rect.top - height - offset;
+    if (top < 8) top = rect.bottom + offset;
+  }
+
+  if (left < 8) left = 8;
+  if (left + width + 8 > window.innerWidth) left = Math.max(8, window.innerWidth - width - 8);
+  if (top + height + 8 > window.innerHeight) top = Math.max(8, window.innerHeight - height - 8);
+  popup.style.left = `${Math.max(8, Math.round(left))}px`;
+  popup.style.top = `${Math.max(8, Math.round(top))}px`;
+
+  if (movePopupHideTimer) {
+    clearTimeout(movePopupHideTimer);
+    movePopupHideTimer = null;
+  }
+}
+
+function showEggCyclePopup(eggCycles, eggSteps, clientX, clientY, targetElement) {
+  createMovePopup();
+  const popup = document.getElementById('move-popup');
+  resetPopupTheme(popup);
+
+  popup.innerHTML = `
+    <div style="font-size:10px;letter-spacing:.16em;text-transform:uppercase;text-align:center;color:#93c5fd;margin-bottom:7px;">Egg Cycles</div>
+    <div style="font-size:20px;line-height:1.15;font-weight:800;text-align:center;color:#ffffff;margin-bottom:8px;">${escapeHtml(eggCycles || '-')} cycles</div>
+    <div style="text-align:center;color:#dbeafe;font-weight:700;">Egg Steps: ${escapeHtml(eggSteps || '-')}</div>
+  `;
+  popup.setAttribute('aria-hidden', 'false');
+  if (!popup.classList.contains('visible')) popup.classList.add('visible');
+
+  const offset = 8;
+  const width = popup.offsetWidth || 220;
+  const height = popup.offsetHeight || 90;
+  let left = clientX + offset;
+  let top = clientY + offset;
+
+  if (targetElement && typeof targetElement.getBoundingClientRect === 'function') {
+    const rect = targetElement.getBoundingClientRect();
+    left = Math.round(rect.left + rect.width / 2 - width / 2);
+    top = rect.top - height - offset;
+    if (top < 8) top = rect.bottom + offset;
+  }
+
+  if (left < 8) left = 8;
+  if (left + width + 8 > window.innerWidth) left = Math.max(8, window.innerWidth - width - 8);
+  if (top + height + 8 > window.innerHeight) top = Math.max(8, window.innerHeight - height - 8);
+  popup.style.left = `${Math.max(8, Math.round(left))}px`;
+  popup.style.top = `${Math.max(8, Math.round(top))}px`;
+
+  if (movePopupHideTimer) {
+    clearTimeout(movePopupHideTimer);
+    movePopupHideTimer = null;
+  }
+}
+
+function attachBaseStatHoverHandlers() {
+  const container = elements.details;
+  if (!container) return;
+
+  container.querySelectorAll('.base-stat-line').forEach((statLine) => {
+    if (statLine.dataset.baseStatHoverBound === '1') return;
+    const statKey = statLine.dataset.statKey;
+    const value = Number(statLine.dataset.statValue);
+    const dexNumber = getDexNumber({ number: statLine.dataset.statDex });
+    if (!statKey || !Number.isFinite(value) || !Number.isFinite(dexNumber)) return;
+
+    statLine.addEventListener('mouseenter', (event) => {
+      showBaseStatPopup(statKey, value, dexNumber, event.clientX, event.clientY, statLine);
+    });
+    statLine.addEventListener('mousemove', (event) => {
+      showBaseStatPopup(statKey, value, dexNumber, event.clientX, event.clientY, statLine);
+    });
+    statLine.addEventListener('mouseleave', () => {
+      if (movePopupHideTimer) clearTimeout(movePopupHideTimer);
+      movePopupHideTimer = setTimeout(hideMovePopup, 180);
+    });
+
+    statLine.dataset.baseStatHoverBound = '1';
+  });
+
+  container.querySelectorAll('.ranking-meta-item').forEach((metaItem) => {
+    if (metaItem.dataset.rankingHoverBound === '1') return;
+    const rankingKey = metaItem.dataset.rankingKey;
+    const value = Number(metaItem.dataset.rankingValue);
+    const label = metaItem.querySelector('strong')?.textContent || rankingKey;
+    const dexNumber = getDexNumber({ number: selectedPokemon?.number });
+    if (!rankingKey || !Number.isFinite(value)) return;
+
+    metaItem.addEventListener('mouseenter', (event) => {
+      showBaseStatPopup(label, value, dexNumber, event.clientX, event.clientY, metaItem, 'root', rankingKey, 'Base Data');
+    });
+    metaItem.addEventListener('mousemove', (event) => {
+      showBaseStatPopup(label, value, dexNumber, event.clientX, event.clientY, metaItem, 'root', rankingKey, 'Base Data');
+    });
+    metaItem.addEventListener('mouseleave', () => {
+      if (movePopupHideTimer) clearTimeout(movePopupHideTimer);
+      movePopupHideTimer = setTimeout(hideMovePopup, 180);
+    });
+
+    metaItem.dataset.rankingHoverBound = '1';
+  });
+
+  container.querySelectorAll('.catch-rate-meta-item').forEach((metaItem) => {
+    if (metaItem.dataset.catchRateHoverBound === '1') return;
+    const catchRate = Number(metaItem.dataset.metaValue);
+    if (!Number.isFinite(catchRate)) return;
+
+    metaItem.addEventListener('mouseenter', (event) => {
+      showCatchRatePopup(catchRate, event.clientX, event.clientY, metaItem);
+    });
+    metaItem.addEventListener('mousemove', (event) => {
+      showCatchRatePopup(catchRate, event.clientX, event.clientY, metaItem);
+    });
+    metaItem.addEventListener('mouseleave', () => {
+      if (movePopupHideTimer) clearTimeout(movePopupHideTimer);
+      movePopupHideTimer = setTimeout(hideMovePopup, 180);
+    });
+
+    metaItem.dataset.catchRateHoverBound = '1';
+  });
+
+  container.querySelectorAll('.level-rate-meta-item').forEach((metaItem) => {
+    if (metaItem.dataset.levelRateHoverBound === '1') return;
+    const levelRate = metaItem.dataset.metaValue;
+    const totalXP = metaItem.dataset.metaExtra;
+    if (!levelRate) return;
+
+    metaItem.addEventListener('mouseenter', (event) => {
+      showLevelRatePopup(levelRate, totalXP, event.clientX, event.clientY, metaItem);
+    });
+    metaItem.addEventListener('mousemove', (event) => {
+      showLevelRatePopup(levelRate, totalXP, event.clientX, event.clientY, metaItem);
+    });
+    metaItem.addEventListener('mouseleave', () => {
+      if (movePopupHideTimer) clearTimeout(movePopupHideTimer);
+      movePopupHideTimer = setTimeout(hideMovePopup, 180);
+    });
+
+    metaItem.dataset.levelRateHoverBound = '1';
+  });
+
+  container.querySelectorAll('.egg-cycles-meta-item').forEach((metaItem) => {
+    if (metaItem.dataset.eggCyclesHoverBound === '1') return;
+    const eggCycles = metaItem.dataset.metaValue;
+    const eggSteps = metaItem.dataset.metaExtra;
+    if (!eggCycles) return;
+
+    metaItem.addEventListener('mouseenter', (event) => {
+      showEggCyclePopup(eggCycles, eggSteps, event.clientX, event.clientY, metaItem);
+    });
+    metaItem.addEventListener('mousemove', (event) => {
+      showEggCyclePopup(eggCycles, eggSteps, event.clientX, event.clientY, metaItem);
+    });
+    metaItem.addEventListener('mouseleave', () => {
+      if (movePopupHideTimer) clearTimeout(movePopupHideTimer);
+      movePopupHideTimer = setTimeout(hideMovePopup, 180);
+    });
+
+    metaItem.dataset.eggCyclesHoverBound = '1';
   });
 }
 
@@ -1645,6 +2013,7 @@ function createMovePopup() {
 function showMovePopup(moveId, clientX, clientY, targetElement) {
   createMovePopup();
   const popup = document.getElementById('move-popup');
+  resetPopupTheme(popup);
   const move = movesLookup[moveId];
   if (!move) return;
 
