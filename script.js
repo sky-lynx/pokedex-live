@@ -67,6 +67,7 @@ let selectedMoveCategory = 'levelUp';
 let groupsByDex = {};
 let movesLookup = {};
 let movePopupHideTimer = null;
+let movePopupPinned = false;
 const GEN_RANGES = {
   1: [1, 151],
   2: [152, 251],
@@ -151,7 +152,30 @@ function resetFilters() {
     input.value = '';
   });
 
+  resetDualRangeFilters();
+
   applyFilter();
+}
+
+function resetDualRangeFilters() {
+  document.querySelectorAll('.dual-range-filter').forEach((control) => {
+    const max = Number(control.dataset.rangeMax);
+    const minRange = control.querySelector('input[type="range"][id$="-min-range"]');
+    const maxRange = control.querySelector('input[type="range"][id$="-max-range"]');
+    const minInput = control.querySelector('input[type="number"][id$="-min"]');
+    const maxInput = control.querySelector('input[type="number"][id$="-max"]');
+    const fill = control.querySelector('.dual-range-fill');
+    const values = control.querySelector('.dual-range-values');
+    if (!minRange || !maxRange || !minInput || !maxInput || !fill || !values) return;
+
+    minRange.value = '0';
+    maxRange.value = String(max);
+    minInput.value = '0';
+    maxInput.value = String(max);
+    fill.style.left = '0%';
+    fill.style.width = '100%';
+    values.textContent = `0 - ${max}`;
+  });
 }
 
 async function loadData() {
@@ -861,7 +885,8 @@ function renderTypeFilters(pokemonList) {
     stats.forEach((stat) => {
       const wrap = document.createElement('div');
       wrap.className = 'stat-filter-row';
-      wrap.innerHTML = `<label>${stat} min <input id="stat-${stat}-min" type="number" /></label><label>${stat} max <input id="stat-${stat}-max" type="number" /></label>`;
+      const max = stat === 'TOTAL' ? 1300 : 255;
+      wrap.innerHTML = renderDualRangeFilter(`stat-${stat}`, stat, max);
       statsGrid.appendChild(wrap);
     });
   }
@@ -873,21 +898,107 @@ function renderTypeFilters(pokemonList) {
     evs.forEach((ev) => {
       const wrap = document.createElement('div');
       wrap.className = 'yield-filter-row';
-      wrap.innerHTML = `<label>${ev} EV min <input id="ev-${ev}-min" type="number" /></label><label>${ev} EV max <input id="ev-${ev}-max" type="number" /></label>`;
+      wrap.innerHTML = renderDualRangeFilter(`ev-${ev}`, `${ev} EV`, 4);
       yieldsGrid.appendChild(wrap);
     });
     const xpWrap = document.createElement('div');
-    xpWrap.innerHTML = `<label>Base XP min <input id="baseXpMin" type="number" /></label><label>Base XP max <input id="baseXpMax" type="number" /></label>`;
+    xpWrap.className = 'yield-filter-row';
+    xpWrap.innerHTML = renderDualRangeFilter('baseXp', 'Base XP', getNumericFilterMax(pokemonList, 'xp', 1));
     yieldsGrid.appendChild(xpWrap);
     const frWrap = document.createElement('div');
-    frWrap.innerHTML = `<label>Base Friendship min <input id="baseFriendMin" type="number" /></label><label>Base Friendship max <input id="baseFriendMax" type="number" /></label>`;
+    frWrap.className = 'yield-filter-row';
+    frWrap.innerHTML = renderDualRangeFilter('baseFriend', 'Base Friendship', getNumericFilterMax(pokemonList, 'baseFriendship', 1));
     yieldsGrid.appendChild(frWrap);
   }
 
+  bindDualRangeFilters();
+
   // Attach listeners for inputs to re-filter on change
   document.querySelectorAll('.type-filter-card input, .type-filter-card select, .type-filter-card .type-button').forEach((el) => {
+    if (el.closest('.dual-range-filter')) return;
     el.addEventListener('change', () => applyFilter());
     el.addEventListener('input', () => applyFilter());
+  });
+}
+
+function getNumericFilterMax(pokemonList, key, fallback) {
+  const values = pokemonList
+    .map((pokemon) => Number(pokemon[key]))
+    .filter((value) => Number.isFinite(value));
+  return values.length ? Math.max(fallback, Math.ceil(Math.max(...values))) : fallback;
+}
+
+function renderDualRangeFilter(prefix, label, max) {
+  return `
+    <div class="dual-range-filter" data-range-prefix="${prefix}" data-range-max="${max}">
+      <div class="dual-range-heading"><strong>${label}</strong><span class="dual-range-values">Any</span></div>
+      <div class="dual-range-track">
+        <div class="dual-range-fill"></div>
+        <input id="${prefix}-min-range" type="range" min="0" max="${max}" value="0" aria-label="${label} minimum" />
+        <input id="${prefix}-max-range" type="range" min="0" max="${max}" value="${max}" aria-label="${label} maximum" />
+      </div>
+      <div class="dual-range-inputs">
+        <label>Min <input id="${prefix}-min" type="number" min="0" max="${max}" value="0" /></label>
+        <label>Max <input id="${prefix}-max" type="number" min="0" max="${max}" value="${max}" /></label>
+      </div>
+    </div>
+  `;
+}
+
+function bindDualRangeFilters() {
+  document.querySelectorAll('.dual-range-filter').forEach((control) => {
+    if (control.dataset.bound === '1') return;
+    const prefix = control.dataset.rangePrefix;
+    const max = Number(control.dataset.rangeMax);
+    const minRange = control.querySelector(`#${prefix}-min-range`);
+    const maxRange = control.querySelector(`#${prefix}-max-range`);
+    const minInput = control.querySelector(`#${prefix}-min`);
+    const maxInput = control.querySelector(`#${prefix}-max`);
+    const fill = control.querySelector('.dual-range-fill');
+    const values = control.querySelector('.dual-range-values');
+    if (!minRange || !maxRange || !minInput || !maxInput || !fill || !values) return;
+
+    const update = (source) => {
+      let minValue = Number(minRange.value);
+      let maxValue = Number(maxRange.value);
+      if (source === 'min') minValue = Math.min(minValue, maxValue);
+      if (source === 'max') maxValue = Math.max(maxValue, minValue);
+      minRange.value = String(minValue);
+      maxRange.value = String(maxValue);
+      minInput.value = String(minValue);
+      maxInput.value = String(maxValue);
+      const left = (minValue / max) * 100;
+      const right = (maxValue / max) * 100;
+      fill.style.left = `${left}%`;
+      fill.style.width = `${Math.max(0, right - left)}%`;
+      values.textContent = `${minValue} - ${maxValue}`;
+      const minimumThumbOnTop = minValue === maxValue && maxValue !== 0;
+      minRange.style.zIndex = minimumThumbOnTop ? '3' : '2';
+      maxRange.style.zIndex = minimumThumbOnTop ? '2' : '3';
+    };
+
+    minRange.addEventListener('input', () => {
+      update('min');
+      applyFilter();
+    });
+    maxRange.addEventListener('input', () => {
+      update('max');
+      applyFilter();
+    });
+    minInput.addEventListener('input', () => {
+      const value = minInput.value === '' ? 0 : Math.max(0, Math.min(max, Number(minInput.value) || 0));
+      minRange.value = String(Math.min(value, Number(maxRange.value)));
+      update('min');
+      applyFilter();
+    });
+    maxInput.addEventListener('input', () => {
+      const value = maxInput.value === '' ? max : Math.max(0, Math.min(max, Number(maxInput.value) || 0));
+      maxRange.value = String(Math.max(value, Number(minRange.value)));
+      update('max');
+      applyFilter();
+    });
+    update();
+    control.dataset.bound = '1';
   });
 }
 
@@ -934,10 +1045,10 @@ function applyFilter() {
     const max = document.getElementById(`ev-${e}-max`);
     evFilters[e] = { min: min ? parseVal(min.value) : null, max: max ? parseVal(max.value) : null };
   });
-  const baseXpMin = parseVal(document.getElementById('baseXpMin') ? document.getElementById('baseXpMin').value : null);
-  const baseXpMax = parseVal(document.getElementById('baseXpMax') ? document.getElementById('baseXpMax').value : null);
-  const baseFriendMin = parseVal(document.getElementById('baseFriendMin') ? document.getElementById('baseFriendMin').value : null);
-  const baseFriendMax = parseVal(document.getElementById('baseFriendMax') ? document.getElementById('baseFriendMax').value : null);
+  const baseXpMin = parseVal(document.getElementById('baseXp-min') ? document.getElementById('baseXp-min').value : null);
+  const baseXpMax = parseVal(document.getElementById('baseXp-max') ? document.getElementById('baseXp-max').value : null);
+  const baseFriendMin = parseVal(document.getElementById('baseFriend-min') ? document.getElementById('baseFriend-min').value : null);
+  const baseFriendMax = parseVal(document.getElementById('baseFriend-max') ? document.getElementById('baseFriend-max').value : null);
 
   // extra filters
   const heightMin = parseVal(document.getElementById('heightMin') ? document.getElementById('heightMin').value : null);
@@ -1025,9 +1136,6 @@ function applyFilter() {
   });
 
   renderList(filteredPokemon);
-  if (filteredPokemon.length === 0) {
-    elements.details.innerHTML = `<div class="details-placeholder"><h2>No Pokémon found</h2><p>Adjust the search or type filter to display more results.</p></div>`;
-  }
 }
 
 function renderList(pokemonList) {
@@ -1228,6 +1336,7 @@ function renderDetails(pokemon) {
   attachTypeHoverHandlers();
   attachGameHoverHandlers();
   attachBaseStatHoverHandlers();
+  attachPopupClickHandler();
   attachMoveHoverHandlers();
 }
 
@@ -1405,11 +1514,15 @@ function renderMovesetSection(pokemon) {
     { key: 'reminder', label: 'Reminder' }
   ];
 
+  const movesByGroup = new Map(moveGroups.map((group) => [
+    group.key,
+    String(pokemon.moves?.[group.key] || '')
+      .split('|')
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+  ]));
   const activeGroup = moveGroups.find((group) => group.key === selectedMoveCategory) || moveGroups[0];
-  const currentMoves = String(pokemon.moves?.[activeGroup.key] || '')
-    .split('|')
-    .map((entry) => entry.trim())
-    .filter(Boolean);
+  const currentMoves = movesByGroup.get(activeGroup.key) || [];
 
   const rowsHtml = currentMoves.length
     ? currentMoves
@@ -1448,7 +1561,10 @@ function renderMovesetSection(pokemon) {
     : `<tr><td colspan="10" class="moveset-empty">No moves available for this category.</td></tr>`;
 
   const tabButtons = moveGroups
-    .map((group) => `<button type="button" class="moveset-tab ${activeGroup.key === group.key ? 'active' : ''}" data-category="${group.key}">${group.label}</button>`)
+    .map((group) => {
+      const hasMoves = movesByGroup.get(group.key).length > 0;
+      return `<button type="button" class="moveset-tab ${activeGroup.key === group.key ? 'active' : ''}${hasMoves ? '' : ' disabled'}" data-category="${group.key}">${group.label}</button>`;
+    })
     .join('');
 
   return `
@@ -1680,6 +1796,24 @@ function attachGameHoverHandlers() {
 
     pill.dataset.gameHoverBound = '1';
   });
+}
+
+function attachPopupClickHandler() {
+  const container = elements.details;
+  if (!container || container.dataset.popupClickBound === '1') return;
+
+  container.addEventListener('click', (event) => {
+    const trigger = event.target.closest('.type-pill-button, .game-pill, .base-stat-line, .ranking-meta-item, .catch-rate-meta-item, .level-rate-meta-item, .egg-cycles-meta-item, .moveset-table tbody tr');
+    if (!trigger || !container.contains(trigger)) return;
+    movePopupPinned = true;
+    if (movePopupHideTimer) {
+      clearTimeout(movePopupHideTimer);
+      movePopupHideTimer = null;
+    }
+    event.stopPropagation();
+  });
+
+  container.dataset.popupClickBound = '1';
 }
 
 function getDexNumber(pokemon) {
@@ -1983,7 +2117,7 @@ function createMovePopup() {
     style.id = 'move-popup-styles';
     style.textContent = `
       #move-popup{position:fixed;z-index:9999;min-width:220px;max-width:420px;padding:10px;border-radius:8px;box-shadow:0 10px 36px rgba(2,6,23,0.75);background:#0f1720;color:#e6eef8;font-size:13px;border:1px solid rgba(255,255,255,0.06);opacity:0;transform:translateY(10px) scale(.986);transition:opacity .26s cubic-bezier(.2,.7,.2,1),transform .26s cubic-bezier(.2,.7,.2,1);pointer-events:none;backdrop-filter: blur(3px);transform-origin:center bottom}
-      #move-popup.visible{opacity:1;transform:translateY(0) scale(1);pointer-events:auto}
+      #move-popup.visible{opacity:1;transform:translateY(0) scale(1);pointer-events:none}
       #move-popup .move-popup-effect{color:#cbd5e1;margin-top:6px;font-size:12px}
     `;
     document.head.appendChild(style);
@@ -1997,17 +2131,15 @@ function createMovePopup() {
   popup.style.top = '8px';
   document.body.appendChild(popup);
 
-  // interactive enter/leave handling
-  popup.addEventListener('mouseenter', () => {
-    if (movePopupHideTimer) {
-      clearTimeout(movePopupHideTimer);
-      movePopupHideTimer = null;
-    }
+  document.addEventListener('click', () => {
+    movePopupPinned = false;
+    hideMovePopup();
   });
-  popup.addEventListener('mouseleave', () => {
-    if (movePopupHideTimer) clearTimeout(movePopupHideTimer);
-    movePopupHideTimer = setTimeout(hideMovePopup, 250);
-  });
+  window.addEventListener('scroll', () => {
+    movePopupPinned = false;
+    hideMovePopup();
+  }, true);
+
 }
 
 function showMovePopup(moveId, clientX, clientY, targetElement) {
@@ -2082,6 +2214,7 @@ function showMovePopup(moveId, clientX, clientY, targetElement) {
 }
 
 function hideMovePopup() {
+  if (movePopupPinned) return;
   const popup = document.getElementById('move-popup');
   if (!popup) return;
   popup.setAttribute('aria-hidden', 'true');

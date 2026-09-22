@@ -369,10 +369,147 @@ button, input {
   width: 100%;
 }
 
+.stats-grid,
+.yields-grid {
+  grid-template-columns: 1fr;
+}
+
+.stats-grid .stat-filter-row,
+.yields-grid .yield-filter-row {
+  display: block;
+}
+
+.stats-grid .stat-filter-row,
+.yields-grid .yield-filter-row {
+  grid-template-columns: 1fr;
+}
+
+.dual-range-filter {
+  display: grid;
+  gap: 0.45rem;
+  min-width: 0;
+}
+
+.dual-range-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  color: var(--text-muted);
+  font-size: 0.88rem;
+}
+
+.dual-range-heading strong {
+  color: var(--text);
+}
+
+.dual-range-values {
+  white-space: nowrap;
+  color: var(--accent-strong);
+  font-variant-numeric: tabular-nums;
+}
+
+.dual-range-track {
+  position: relative;
+  height: 1.5rem;
+  display: flex;
+  align-items: center;
+}
+
+.dual-range-track::before,
+.dual-range-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 0.35rem;
+  border-radius: 999px;
+}
+
+.dual-range-track::before {
+  content: '';
+  background: rgba(148, 163, 184, 0.2);
+}
+
+.dual-range-fill {
+  left: 0;
+  right: auto;
+  width: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--accent-strong));
+  pointer-events: none;
+}
+
+.dual-range-track input[type='range'] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 1.5rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  appearance: none;
+  pointer-events: none;
+}
+
+.dual-range-track input[type='range']::-webkit-slider-runnable-track {
+  height: 0.35rem;
+  background: transparent;
+}
+
+.dual-range-track input[type='range']::-moz-range-track {
+  height: 0.35rem;
+  background: transparent;
+}
+
+.dual-range-track input[type='range']::-webkit-slider-thumb {
+  width: 1rem;
+  height: 1rem;
+  margin-top: -0.325rem;
+  border: 2px solid var(--surface);
+  border-radius: 50%;
+  background: var(--accent-strong);
+  box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.22);
+  appearance: none;
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.dual-range-track input[type='range']::-moz-range-thumb {
+  width: 0.75rem;
+  height: 0.75rem;
+  border: 2px solid var(--surface);
+  border-radius: 50%;
+  background: var(--accent-strong);
+  box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.22);
+  cursor: pointer;
+  pointer-events: auto;
+}
+
+.dual-range-inputs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.dual-range-filter .dual-range-inputs label {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.dual-range-filter .dual-range-inputs input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.4rem 0.5rem;
+}
+
 @media (min-width: 920px) {
   .stats-grid .stat-filter-row,
   .yields-grid .yield-filter-row {
-    grid-template-columns: 1fr 1fr;
+    display: block;
+    grid-template-columns: 1fr;
   }
 }
 
@@ -385,7 +522,9 @@ button, input {
 .pokemon-list {
   display: grid;
   gap: 0.7rem;
-  max-height: calc(100vh - 200px);
+  align-content: start;
+  height: 520px;
+  max-height: none;
   overflow: auto;
   padding-right: 0.25rem;
 }
@@ -503,13 +642,15 @@ button, input {
 .pokemon-list {
   display: grid;
   gap: 0.85rem;
-  max-height: calc(100vh - 260px);
+  align-content: start;
+  height: 520px;
+  max-height: none;
   overflow: auto;
   padding-right: 0.25rem;
 }
 
 .list-card {
-  max-height: calc(100vh - 180px);
+  max-height: none;
   overflow: hidden;
 }
 
@@ -522,7 +663,8 @@ button, input {
 @media (min-width: 920px) {
   .stats-grid .stat-filter-row,
   .yields-grid .yield-filter-row {
-    grid-template-columns: 1fr 1fr;
+    display: block;
+    grid-template-columns: 1fr;
   }
 }
 
@@ -1104,11 +1246,13 @@ button, input {
   border-radius: 999px;
   background: rgba(148, 163, 184, 0.12);
   overflow: hidden;
+  clip-path: inset(0 round 999px);
   display: flex;
 }
 
 .gender-fill {
   height: 100%;
+  min-width: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1347,6 +1491,21 @@ button, input {
   border-color: rgba(56, 189, 248, 0.35);
 }
 
+.moveset-tab.disabled {
+  color: rgba(148, 163, 184, 0.5);
+  background: rgba(15, 23, 32, 0.55);
+  border-color: rgba(148, 163, 184, 0.06);
+  cursor: pointer;
+  opacity: 0.65;
+}
+
+.moveset-tab.disabled:hover {
+  transform: translateY(-1px);
+  background: rgba(30, 41, 59, 0.78);
+  border-color: rgba(148, 163, 184, 0.18);
+  box-shadow: 0 10px 20px rgba(2, 6, 23, 0.22);
+}
+
 .moveset-table-wrap {
   overflow-x: auto;
   border-radius: 18px;
@@ -1489,7 +1648,7 @@ button, input {
   }
 
   .pokemon-list {
-    max-height: none;
+    height: 420px;
   }
 
   .type-table {
@@ -1510,4 +1669,9 @@ button, input {
   .type-table .type-stack-cell {
     padding: 0.12rem 0;
   }
+}
+
+.stats-grid,
+.yields-grid {
+  grid-template-columns: 1fr;
 }
