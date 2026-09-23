@@ -55,7 +55,8 @@ const elements = {
   listCount: document.getElementById('listCount'),
   status: document.getElementById('status'),
   details: document.getElementById('details'),
-  randomButton: document.getElementById('randomButton')
+  randomButton: document.getElementById('randomButton'),
+  profileButton: document.getElementById('profileButton')
 };
 
 let allPokemon = [];
@@ -70,6 +71,11 @@ let groupsByDex = {};
 let movesLookup = {};
 let movePopupHideTimer = null;
 let movePopupPinned = false;
+let currentUsername = localStorage.getItem('pokedexCurrentUser') || '';
+let authMode = 'login';
+let customFavoriteFilter = 'any';
+let customNoteFilter = 'any';
+const PROFILE_STORAGE_KEY = 'pokedexLocalProfiles';
 const GEN_RANGES = {
   1: [1, 151],
   2: [152, 251],
@@ -87,6 +93,7 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 
 async function initialize() {
+  bindProfileControls();
   elements.status.textContent = 'Loading sheet data from Google...';
   try {
     const [rawRows, pokedexRows, movesRows] = await Promise.all([loadData(), loadPokedexData(), loadMovesData()]);
@@ -125,6 +132,121 @@ async function initialize() {
   });
 };
 
+function getProfiles() {
+  try {
+    return JSON.parse(localStorage.getItem(PROFILE_STORAGE_KEY) || '{}');
+  } catch (error) {
+    console.warn('Unable to read local profiles', error);
+    return {};
+  }
+}
+
+function saveProfiles(profiles) {
+  localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profiles));
+}
+
+function getCurrentProfile() {
+  return currentUsername ? getProfiles()[currentUsername] || null : null;
+}
+
+function getPokemonKey(pokemon) {
+  return pokemon.formKey || `${pokemon.number}|${normalizePokemonName(pokemon.name)}`;
+}
+
+function updateProfileButton() {
+  if (!elements.profileButton) return;
+  elements.profileButton.textContent = currentUsername ? `Log out (${currentUsername})` : 'Log in';
+}
+
+function bindProfileControls() {
+  updateProfileButton();
+  elements.profileButton?.addEventListener('click', () => {
+    if (currentUsername) {
+      currentUsername = '';
+      localStorage.removeItem('pokedexCurrentUser');
+      updateProfileButton();
+      applyFilter();
+      if (selectedPokemon) renderDetails(selectedPokemon);
+      return;
+    }
+    openAuthModal('login');
+  });
+
+  document.querySelectorAll('[data-auth-close]').forEach((button) => {
+    button.addEventListener('click', closeAuthModal);
+  });
+  document.getElementById('authModeToggle')?.addEventListener('click', () => {
+    setAuthMode(authMode === 'login' ? 'register' : 'login');
+  });
+  document.getElementById('authForm')?.addEventListener('submit', handleAuthSubmit);
+}
+
+function setAuthMode(mode) {
+  authMode = mode;
+  const isLogin = mode === 'login';
+  const title = document.getElementById('authTitle');
+  const submit = document.getElementById('authSubmit');
+  const toggle = document.getElementById('authModeToggle');
+  const password = document.getElementById('authPassword');
+  if (title) title.textContent = isLogin ? 'Log in' : 'Create a profile';
+  if (submit) submit.textContent = isLogin ? 'Log in' : 'Create profile';
+  if (toggle) toggle.textContent = isLogin ? 'Create a local profile' : 'I already have a profile';
+  if (password) password.autocomplete = isLogin ? 'current-password' : 'new-password';
+  const message = document.getElementById('authMessage');
+  if (message) message.textContent = '';
+  document.getElementById('authUsernameMessage').textContent = '';
+  document.getElementById('authPasswordMessage').textContent = '';
+}
+
+function openAuthModal(mode = 'login') {
+  const modal = document.getElementById('authModal');
+  if (!modal) return;
+  setAuthMode(mode);
+  modal.hidden = false;
+  document.getElementById('authUsername')?.focus();
+}
+
+function closeAuthModal() {
+  const modal = document.getElementById('authModal');
+  if (modal) modal.hidden = true;
+}
+
+function handleAuthSubmit(event) {
+  event.preventDefault();
+  const form = event.currentTarget;
+  const username = String(form.username.value || '').trim();
+  const password = String(form.password.value || '');
+  const message = document.getElementById('authMessage');
+  const usernameMessage = document.getElementById('authUsernameMessage');
+  const passwordMessage = document.getElementById('authPasswordMessage');
+  const profiles = getProfiles();
+
+  if (message) message.textContent = '';
+  if (usernameMessage) usernameMessage.textContent = username ? username.length < 3 ? 'Username must be at least 3 characters.' : '' : 'Username is required.';
+  if (passwordMessage) passwordMessage.textContent = password ? password.length < 4 ? 'Password must be at least 4 characters.' : '' : 'Password is required.';
+  if (!username || username.length < 3 || !password || password.length < 4) return;
+
+  if (authMode === 'register') {
+    if (profiles[username]) {
+      if (message) message.textContent = 'That username already exists on this browser.';
+      return;
+    }
+    profiles[username] = { password, favorites: [], notes: {} };
+    saveProfiles(profiles);
+  } else if (!profiles[username] || profiles[username].password !== password) {
+    if (message) message.textContent = 'Username or password is incorrect.';
+    return;
+  }
+
+  currentUsername = username;
+  localStorage.setItem('pokedexCurrentUser', currentUsername);
+  updateProfileButton();
+  closeAuthModal();
+  form.reset();
+  applyFilter();
+  if (selectedPokemon) renderDetails(selectedPokemon);
+}
+
 function resetFilters() {
   elements.searchInput.value = '';
 
@@ -159,6 +281,12 @@ function resetFilters() {
   eggGroupLogic = 'or';
   document.getElementById('eggGroupLogicAnd')?.classList.remove('active');
   document.getElementById('eggGroupLogicOr')?.classList.add('active');
+
+  customFavoriteFilter = 'any';
+  customNoteFilter = 'any';
+  document.querySelectorAll('.custom-filter-button').forEach((button) => {
+    button.classList.toggle('active', button.dataset.customFilter === 'any');
+  });
 
   document.querySelectorAll('.filter-panel input[type="number"]').forEach((input) => {
     input.value = '';
@@ -881,7 +1009,7 @@ function renderTypeFilters(pokemonList) {
   });
 
   // Generation buttons
-  const generationButtons = document.querySelectorAll('.generation-button');
+  const generationButtons = document.querySelectorAll('#panel-generation .generation-button');
   generationButtons.forEach((button) => {
     button.addEventListener('click', () => {
       if (button.dataset.generation === 'any') {
@@ -897,6 +1025,19 @@ function renderTypeFilters(pokemonList) {
           allButton?.classList.remove('active');
         }
       }
+      applyFilter();
+    });
+  });
+
+  document.querySelectorAll('.custom-filter-button').forEach((button) => {
+    button.addEventListener('click', () => {
+      const value = button.dataset.customFilter || 'any';
+      const group = button.dataset.customGroup;
+      if (group === 'favorites') customFavoriteFilter = value;
+      if (group === 'notes') customNoteFilter = value;
+      document.querySelectorAll(`.custom-filter-button[data-custom-group="${group}"]`).forEach((item) => {
+        item.classList.toggle('active', item === button);
+      });
       applyFilter();
     });
   });
@@ -1193,6 +1334,7 @@ function applyFilter() {
   const selectedShapes = getSelectedAttributeValues('shape');
   const selectedColors = getSelectedAttributeValues('color');
   const selectedEggGroups = getSelectedAttributeValues('eggGroup');
+  const profile = getCurrentProfile();
 
   filteredPokemon = all.filter((pokemon) => {
     const groupForms = pokemon.groupForms || [pokemon];
@@ -1236,6 +1378,16 @@ function applyFilter() {
       } else if (!selectedEggGroups.some((group) => eggGroups.includes(group))) {
         return false;
       }
+    }
+
+    if (customFavoriteFilter !== 'any' || customNoteFilter !== 'any') {
+      const pokemonKey = getPokemonKey(pokemon);
+      const isFavorite = Boolean(profile?.favorites?.includes(pokemonKey));
+      const hasNote = Boolean(profile?.notes?.[pokemonKey]?.trim());
+      if (customFavoriteFilter === 'favorite' && !isFavorite) return false;
+      if (customFavoriteFilter === 'notFavorite' && isFavorite) return false;
+      if (customNoteFilter === 'hasNote' && !hasNote) return false;
+      if (customNoteFilter === 'noNote' && hasNote) return false;
     }
 
     // generation
@@ -1295,7 +1447,8 @@ function renderList(pokemonList) {
     const card = document.createElement('button');
     card.type = 'button';
     card.className = 'pokemon-card';
-    card.innerHTML = `<h3>${pokemon.name}</h3><p>#${pokemon.number} • ${pokemon.types.filter(Boolean).join(' / ')}</p>`;
+    const isFavorite = Boolean(getCurrentProfile()?.favorites?.includes(getPokemonKey(pokemon)));
+    card.innerHTML = `<h3>${pokemon.name}${isFavorite ? ' <span class="favorite-star" aria-label="Favorite">★</span>' : ''}</h3><p>#${pokemon.number} • ${pokemon.types.filter(Boolean).join(' / ')}</p>`;
     card.addEventListener('click', () => selectPokemon(pokemon));
     if (selectedPokemon && selectedPokemon.group === pokemon.group) {
       card.classList.add('active');
@@ -1321,6 +1474,10 @@ function renderDetails(pokemon) {
 
   elements.details.innerHTML = `
     <div class="detail-card">
+      <nav class="mobile-detail-nav" aria-label="Detail navigation">
+        <button type="button" class="mobile-back-button">Back to list</button>
+        <strong>#${escapeHtml(pokemon.number)} ${escapeHtml(pokemon.name)}</strong>
+      </nav>
       <div class="detail-header">
         ${formSwitcher}
         <div class="title-block">
@@ -1331,6 +1488,8 @@ function renderDetails(pokemon) {
           </div>
           <div class="badges">${typesHtml}</div>
         </div>
+
+        ${renderPersonalTools(pokemon)}
 
         <div class="ability-section">
           <div class="ability-list">
@@ -1459,6 +1618,51 @@ function renderDetails(pokemon) {
     </div>
   `;
 
+  elements.details.querySelector('.mobile-back-button')?.addEventListener('click', () => {
+    document.querySelector('.list-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    elements.searchInput?.focus({ preventScroll: true });
+  });
+
+  elements.details.querySelector('.personal-tools-lock')?.addEventListener('click', () => {
+    openAuthModal('login');
+  });
+
+  const favoriteButton = elements.details.querySelector('.favorite-button');
+  favoriteButton?.addEventListener('click', () => {
+    if (!currentUsername) {
+      openAuthModal('login');
+      return;
+    }
+    const profiles = getProfiles();
+    const profile = profiles[currentUsername];
+    const key = getPokemonKey(pokemon);
+    const favoriteIndex = profile.favorites.indexOf(key);
+    if (favoriteIndex >= 0) profile.favorites.splice(favoriteIndex, 1);
+    else profile.favorites.push(key);
+    saveProfiles(profiles);
+    const isFavorite = profile.favorites.includes(key);
+    favoriteButton.classList.toggle('active', isFavorite);
+    favoriteButton.textContent = isFavorite ? '★ Favorited' : '☆ Favorite';
+    applyFilter();
+  });
+
+  elements.details.querySelector('.save-note-button')?.addEventListener('click', () => {
+    if (!currentUsername) {
+      openAuthModal('login');
+      return;
+    }
+    const profiles = getProfiles();
+    const profile = profiles[currentUsername];
+    const key = getPokemonKey(pokemon);
+    const note = elements.details.querySelector('.pokemon-note')?.value.trim() || '';
+    if (note) profile.notes[key] = note;
+    else delete profile.notes[key];
+    saveProfiles(profiles);
+    applyFilter();
+    const message = elements.details.querySelector('.note-saved-message');
+    if (message) message.textContent = 'Saved';
+  });
+
   if (groupForms.length > 1) {
     elements.details.querySelectorAll('.form-select').forEach((button) => {
       button.addEventListener('click', () => {
@@ -1487,6 +1691,31 @@ function renderDetails(pokemon) {
   attachBaseStatHoverHandlers();
   attachPopupClickHandler();
   attachMoveHoverHandlers();
+}
+
+function renderPersonalTools(pokemon) {
+  const profile = getCurrentProfile();
+  const key = getPokemonKey(pokemon);
+  const isFavorite = Boolean(profile?.favorites?.includes(key));
+  const note = profile?.notes?.[key] || '';
+  return `
+    <section class="personal-tools${currentUsername ? '' : ' locked'}" aria-label="Personal profile tools">
+      <div class="personal-tool-panel favorite-panel">
+        <button type="button" class="favorite-button${isFavorite ? ' active' : ''}"${currentUsername ? '' : ' disabled'}>${isFavorite ? '★ Favorited' : '☆ Favorite'}</button>
+      </div>
+      <div class="personal-tool-panel note-panel">
+        <div class="note-editor">
+          <label for="pokemonNote">Personal note${currentUsername ? ` for ${escapeHtml(currentUsername)}` : ''}</label>
+          <textarea id="pokemonNote" class="pokemon-note" rows="2" maxlength="500" placeholder="Add a private note..." ${currentUsername ? '' : 'disabled'}>${escapeHtml(note)}</textarea>
+          <div class="note-actions">
+            <button type="button" class="save-note-button"${currentUsername ? '' : ' disabled'}>Save note</button>
+            <span class="note-saved-message" aria-live="polite"></span>
+          </div>
+        </div>
+      </div>
+      ${currentUsername ? '' : '<button type="button" class="personal-tools-lock">Login to use this feature</button>'}
+    </section>
+  `;
 }
 
 function renderTypeBadge(type, options = {}) {

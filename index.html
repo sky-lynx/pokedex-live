@@ -15,7 +15,10 @@
         <p class="hero-copy">Data loads directly from the published Google Sheet and updates your Pokémon profile in real time.</p>
       </div>
       <div class="hero-actions">
-        <button id="randomButton" class="button button-primary">Random Pokémon</button>
+        <div class="hero-buttons">
+          <button id="randomButton" class="button button-primary">Random Pokémon</button>
+          <button id="profileButton" type="button" class="button profile-button">Log in</button>
+        </div>
         <div id="status" class="status-message">Loading sheet data...</div>
       </div>
     </header>
@@ -51,6 +54,7 @@
             <button type="button" class="filter-tab" data-panel="shape">Shape</button>
             <button type="button" class="filter-tab" data-panel="color">Color</button>
             <button type="button" class="filter-tab" data-panel="eggGroup">Egg Group</button>
+            <button type="button" class="filter-tab" data-panel="custom">Custom</button>
           </div>
 
           <div id="filterPanels">
@@ -123,6 +127,25 @@
                 <div id="eggGroupButtons" class="generation-grid"></div>
               </div>
             </div>
+
+            <div id="panel-custom" class="filter-panel" style="display:none">
+              <div class="custom-filter-section">
+                <h3>Favorites</h3>
+                <div class="generation-grid custom-filter-grid">
+                  <button type="button" class="generation-button custom-filter-button active" data-custom-group="favorites" data-custom-filter="any">Any</button>
+                  <button type="button" class="generation-button custom-filter-button" data-custom-group="favorites" data-custom-filter="favorite">Favorites</button>
+                  <button type="button" class="generation-button custom-filter-button" data-custom-group="favorites" data-custom-filter="notFavorite">Non-favorites</button>
+                </div>
+              </div>
+              <div class="custom-filter-section">
+                <h3>Notes</h3>
+                <div class="generation-grid custom-filter-grid">
+                  <button type="button" class="generation-button custom-filter-button active" data-custom-group="notes" data-custom-filter="any">Any</button>
+                  <button type="button" class="generation-button custom-filter-button" data-custom-group="notes" data-custom-filter="hasNote">Has note</button>
+                  <button type="button" class="generation-button custom-filter-button" data-custom-group="notes" data-custom-filter="noNote">No note</button>
+                </div>
+              </div>
+            </div>
           </div>
         </section>
       </aside>
@@ -134,6 +157,27 @@
         </div>
       </section>
     </main>
+  </div>
+
+  <div id="authModal" class="auth-modal" hidden>
+    <div class="auth-backdrop" data-auth-close></div>
+    <section class="auth-dialog" role="dialog" aria-modal="true" aria-labelledby="authTitle">
+      <button type="button" class="auth-close" data-auth-close aria-label="Close">&times;</button>
+      <p class="eyebrow">Local profile</p>
+      <h2 id="authTitle">Log in</h2>
+      <p class="auth-copy">Your profile stays on this browser. Do not use a real password.</p>
+      <form id="authForm" novalidate>
+        <label for="authUsername">Username</label>
+        <input id="authUsername" name="username" required minlength="3" maxlength="24" autocomplete="username" />
+        <p id="authUsernameMessage" class="auth-field-message" role="status"></p>
+        <label for="authPassword">Password</label>
+        <input id="authPassword" name="password" required minlength="4" maxlength="80" type="password" autocomplete="current-password" />
+        <p id="authPasswordMessage" class="auth-field-message" role="status"></p>
+        <p id="authMessage" class="auth-message" role="status"></p>
+        <button id="authSubmit" type="submit" class="button button-primary">Log in</button>
+      </form>
+      <button id="authModeToggle" type="button" class="auth-toggle">Create a local profile</button>
+    </section>
   </div>
 
   <script src="script.js"></script>
