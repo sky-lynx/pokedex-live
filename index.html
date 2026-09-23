@@ -48,6 +48,9 @@
             <button type="button" class="filter-tab" data-panel="baseStats">Base Stats</button>
             <button type="button" class="filter-tab" data-panel="yields">Yields</button>
             <button type="button" class="filter-tab" data-panel="extra">Extra</button>
+            <button type="button" class="filter-tab" data-panel="shape">Shape</button>
+            <button type="button" class="filter-tab" data-panel="color">Color</button>
+            <button type="button" class="filter-tab" data-panel="eggGroup">Egg Group</button>
           </div>
 
           <div id="filterPanels">
@@ -62,8 +65,8 @@
             <div id="panel-typing" class="filter-panel" style="display:none">
               <div class="filter-grid">
                 <label class="radio-button"><input type="radio" name="typingFilter" value="any" checked /><span>Any</span></label>
-                <label class="radio-button"><input type="radio" name="typingFilter" value="monotype" /><span>Monotype</span></label>
-                <label class="radio-button"><input type="radio" name="typingFilter" value="dual" /><span>Dual-type</span></label>
+                <label class="radio-button"><input type="radio" name="typingFilter" value="monotype" /><span>Mono Type</span></label>
+                <label class="radio-button"><input type="radio" name="typingFilter" value="dual" /><span>Dual Type</span></label>
               </div>
             </div>
 
@@ -96,14 +99,28 @@
 
             <div id="panel-extra" class="filter-panel" style="display:none">
               <div class="filter-grid extra-grid">
-                <label>Height (m) min <input id="heightMin" type="number" step="0.01" /></label>
-                <label>Height (m) max <input id="heightMax" type="number" step="0.01" /></label>
-                <label>Weight (kg) min <input id="weightMin" type="number" step="0.1" /></label>
-                <label>Weight (kg) max <input id="weightMax" type="number" step="0.1" /></label>
-                <label>Catch rate min <input id="catchMin" type="number" /></label>
-                <label>Catch rate max <input id="catchMax" type="number" /></label>
-                <label>Dex # min <input id="dexMin" type="number" /></label>
-                <label>Dex # max <input id="dexMax" type="number" /></label>
+              </div>
+            </div>
+
+            <div id="panel-shape" class="filter-panel" style="display:none">
+              <div class="attribute-filter-section">
+                <div id="shapeButtons" class="generation-grid"></div>
+              </div>
+            </div>
+
+            <div id="panel-color" class="filter-panel" style="display:none">
+              <div class="attribute-filter-section">
+                <div id="colorButtons" class="generation-grid"></div>
+              </div>
+            </div>
+
+            <div id="panel-eggGroup" class="filter-panel" style="display:none">
+              <div class="attribute-filter-section">
+                <div class="logic-toggle egg-group-logic-toggle">
+                  <button id="eggGroupLogicAnd" type="button" class="button">AND</button>
+                  <button id="eggGroupLogicOr" type="button" class="button active">OR</button>
+                </div>
+                <div id="eggGroupButtons" class="generation-grid"></div>
               </div>
             </div>
           </div>

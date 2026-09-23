@@ -64,6 +64,8 @@ let activeType = null;
 let selectedPokemon = null;
 let selectedPokedexGen = 1;
 let selectedMoveCategory = 'levelUp';
+let typingFilterValue = 'any';
+let eggGroupLogic = 'or';
 let groupsByDex = {};
 let movesLookup = {};
 let movePopupHideTimer = null;
@@ -98,6 +100,7 @@ async function initialize() {
     processGroups(groupsByDex);
     filteredPokemon = Object.values(groupsByDex).map((group) => group[0]);
     renderTypeFilters(allPokemon);
+    renderAttributeFilters(allPokemon);
     renderList(filteredPokemon);
     if (filteredPokemon.length) {
       selectPokemon(filteredPokemon[0]);
@@ -143,10 +146,19 @@ function resetFilters() {
   document.querySelectorAll('input[name="typingFilter"]').forEach((input) => {
     input.checked = input.value === 'any';
   });
+  typingFilterValue = 'any';
 
   document.querySelectorAll('.generation-button').forEach((button) => {
-    button.classList.toggle('active', button.dataset.generation === 'any');
+    if (button.closest('#panel-generation')) {
+      button.classList.toggle('active', button.dataset.generation === 'any');
+    }
   });
+  document.querySelectorAll('.attribute-button').forEach((button) => {
+    button.classList.toggle('active', button.dataset.value === 'any');
+  });
+  eggGroupLogic = 'or';
+  document.getElementById('eggGroupLogicAnd')?.classList.remove('active');
+  document.getElementById('eggGroupLogicOr')?.classList.add('active');
 
   document.querySelectorAll('.filter-panel input[type="number"]').forEach((input) => {
     input.value = '';
@@ -872,9 +884,38 @@ function renderTypeFilters(pokemonList) {
   const generationButtons = document.querySelectorAll('.generation-button');
   generationButtons.forEach((button) => {
     button.addEventListener('click', () => {
-      generationButtons.forEach((btn) => btn.classList.remove('active'));
-      button.classList.add('active');
+      if (button.dataset.generation === 'any') {
+        generationButtons.forEach((btn) => btn.classList.remove('active'));
+        button.classList.add('active');
+      } else {
+        button.classList.toggle('active');
+        const selected = document.querySelectorAll('.generation-button.active:not([data-generation="any"])');
+        const allButton = document.querySelector('.generation-button[data-generation="any"]');
+        if (selected.length === 0) {
+          allButton?.classList.add('active');
+        } else {
+          allButton?.classList.remove('active');
+        }
+      }
       applyFilter();
+    });
+  });
+
+  const typingLabels = document.querySelectorAll('#panel-typing .radio-button');
+  const anyTypingInput = document.querySelector('input[name="typingFilter"][value="any"]');
+  typingLabels.forEach((label) => {
+    const input = label.querySelector('input[name="typingFilter"]');
+    label.addEventListener('click', (event) => {
+      const deselecting = input.value !== 'any' && typingFilterValue === input.value;
+      if (deselecting) {
+        event.preventDefault();
+      }
+      setTimeout(() => {
+        typingFilterValue = deselecting ? 'any' : input.value;
+        anyTypingInput.checked = typingFilterValue === 'any';
+        input.checked = typingFilterValue === input.value;
+        applyFilter();
+      }, 0);
     });
   });
 
@@ -911,6 +952,16 @@ function renderTypeFilters(pokemonList) {
     yieldsGrid.appendChild(frWrap);
   }
 
+  const extraGrid = document.querySelector('.extra-grid');
+  if (extraGrid && extraGrid.children.length === 0) {
+    extraGrid.innerHTML = [
+      renderDualRangeFilter('height', 'Height (m)', getNumericFilterMax(pokemonList, 'heightM', 1), 0.01),
+      renderDualRangeFilter('weight', 'Weight (kg)', getNumericFilterMax(pokemonList, 'weightKg', 1), 0.1),
+      renderDualRangeFilter('catch', 'Catch Rate', getNumericFilterMax(pokemonList, 'catchRate', 1)),
+      renderDualRangeFilter('dex', 'Dex #', getNumericFilterMax(pokemonList, 'number', 1))
+    ].join('');
+  }
+
   bindDualRangeFilters();
 
   // Attach listeners for inputs to re-filter on change
@@ -923,23 +974,102 @@ function renderTypeFilters(pokemonList) {
 
 function getNumericFilterMax(pokemonList, key, fallback) {
   const values = pokemonList
-    .map((pokemon) => Number(pokemon[key]))
+    .map((pokemon) => Number(String(pokemon[key] || '').replace(/[^0-9.]/g, '')))
     .filter((value) => Number.isFinite(value));
-  return values.length ? Math.max(fallback, Math.ceil(Math.max(...values))) : fallback;
+  return values.length ? Math.max(fallback, Math.max(...values)) : fallback;
 }
 
-function renderDualRangeFilter(prefix, label, max) {
+function renderAttributeFilters(pokemonList) {
+  const groups = {
+    shape: [...new Set(pokemonList.map((pokemon) => String(pokemon.shape || '').trim()).filter(Boolean))].sort(),
+    color: [...new Set(pokemonList.map((pokemon) => String(pokemon.color || '').trim()).filter(Boolean))].sort(),
+    eggGroup: [...new Set(pokemonList
+      .flatMap((pokemon) => [pokemon.eggGroup1, pokemon.eggGroup2])
+      .map((value) => String(value || '').trim())
+      .filter(Boolean))].sort((left, right) => {
+      const leftIsNoEggs = left.toLowerCase() === 'no eggs discovered';
+      const rightIsNoEggs = right.toLowerCase() === 'no eggs discovered';
+      if (leftIsNoEggs !== rightIsNoEggs) return leftIsNoEggs ? 1 : -1;
+      return left.localeCompare(right);
+    })
+  };
+
+  Object.entries(groups).forEach(([group, values]) => {
+    const container = document.getElementById(`${group === 'eggGroup' ? 'eggGroup' : group}Buttons`);
+    if (!container) return;
+
+    container.innerHTML = [
+      `<button type="button" class="generation-button attribute-button active" data-attribute-group="${group}" data-value="any">Any</button>`,
+      ...values.map((value) => `<button type="button" class="generation-button attribute-button" data-attribute-group="${group}" data-value="${escapeHtml(value)}">${escapeHtml(value)}</button>`)
+    ].join('');
+
+    container.querySelectorAll('.attribute-button').forEach((button) => {
+      button.addEventListener('click', () => {
+        const groupButtons = container.querySelectorAll('.attribute-button');
+        if (button.dataset.value === 'any') {
+          groupButtons.forEach((item) => item.classList.remove('active'));
+          button.classList.add('active');
+        } else {
+          const isNoEggsDiscovered = group === 'eggGroup' && button.dataset.value.toLowerCase() === 'no eggs discovered';
+          if (isNoEggsDiscovered) {
+            const wasSelected = button.classList.contains('active');
+            groupButtons.forEach((item) => item.classList.remove('active'));
+            const anyButton = container.querySelector('.attribute-button[data-value="any"]');
+            if (wasSelected) {
+              anyButton?.classList.add('active');
+            } else {
+              button.classList.add('active');
+            }
+            applyFilter();
+            return;
+          }
+          if (group === 'eggGroup') {
+            container.querySelector('[data-value="No Eggs Discovered"]')?.classList.remove('active');
+          }
+          button.classList.toggle('active');
+          const selected = container.querySelectorAll('.attribute-button.active:not([data-value="any"])');
+          const anyButton = container.querySelector('.attribute-button[data-value="any"]');
+          anyButton?.classList.toggle('active', selected.length === 0);
+          if (selected.length > 0) anyButton?.classList.remove('active');
+        }
+        applyFilter();
+      });
+    });
+  });
+
+  const eggGroupLogicAnd = document.getElementById('eggGroupLogicAnd');
+  const eggGroupLogicOr = document.getElementById('eggGroupLogicOr');
+  eggGroupLogicAnd?.addEventListener('click', () => {
+    eggGroupLogic = 'and';
+    eggGroupLogicAnd.classList.add('active');
+    eggGroupLogicOr?.classList.remove('active');
+    applyFilter();
+  });
+  eggGroupLogicOr?.addEventListener('click', () => {
+    eggGroupLogic = 'or';
+    eggGroupLogicOr.classList.add('active');
+    eggGroupLogicAnd?.classList.remove('active');
+    applyFilter();
+  });
+}
+
+function getSelectedAttributeValues(group) {
+  return Array.from(document.querySelectorAll(`.attribute-button[data-attribute-group="${group}"].active:not([data-value="any"])`))
+    .map((button) => button.dataset.value);
+}
+
+function renderDualRangeFilter(prefix, label, max, step = 1) {
   return `
     <div class="dual-range-filter" data-range-prefix="${prefix}" data-range-max="${max}">
       <div class="dual-range-heading"><strong>${label}</strong><span class="dual-range-values">Any</span></div>
       <div class="dual-range-track">
         <div class="dual-range-fill"></div>
-        <input id="${prefix}-min-range" type="range" min="0" max="${max}" value="0" aria-label="${label} minimum" />
-        <input id="${prefix}-max-range" type="range" min="0" max="${max}" value="${max}" aria-label="${label} maximum" />
+        <input id="${prefix}-min-range" type="range" min="0" max="${max}" step="${step}" value="0" aria-label="${label} minimum" />
+        <input id="${prefix}-max-range" type="range" min="0" max="${max}" step="${step}" value="${max}" aria-label="${label} maximum" />
       </div>
       <div class="dual-range-inputs">
-        <label>Min <input id="${prefix}-min" type="number" min="0" max="${max}" value="0" /></label>
-        <label>Max <input id="${prefix}-max" type="number" min="0" max="${max}" value="${max}" /></label>
+        <label>Min <input id="${prefix}-min" type="number" min="0" max="${max}" step="${step}" value="0" /></label>
+        <label>Max <input id="${prefix}-max" type="number" min="0" max="${max}" step="${step}" value="${max}" /></label>
       </div>
     </div>
   `;
@@ -1019,7 +1149,8 @@ function applyFilter() {
   const typingVal = (document.querySelector('input[name="typingFilter"]:checked') || {}).value || 'any';
 
   // generation
-  const genSel = document.querySelector('.generation-button.active') ? document.querySelector('.generation-button.active').dataset.generation : 'any';
+  const selectedGenerations = Array.from(document.querySelectorAll('#panel-generation .generation-button.active:not([data-generation="any"])'))
+    .map((button) => Number(button.dataset.generation));
 
   // helper to parse numeric inputs
   const parseVal = (v) => {
@@ -1051,14 +1182,17 @@ function applyFilter() {
   const baseFriendMax = parseVal(document.getElementById('baseFriend-max') ? document.getElementById('baseFriend-max').value : null);
 
   // extra filters
-  const heightMin = parseVal(document.getElementById('heightMin') ? document.getElementById('heightMin').value : null);
-  const heightMax = parseVal(document.getElementById('heightMax') ? document.getElementById('heightMax').value : null);
-  const weightMin = parseVal(document.getElementById('weightMin') ? document.getElementById('weightMin').value : null);
-  const weightMax = parseVal(document.getElementById('weightMax') ? document.getElementById('weightMax').value : null);
-  const catchMin = parseVal(document.getElementById('catchMin') ? document.getElementById('catchMin').value : null);
-  const catchMax = parseVal(document.getElementById('catchMax') ? document.getElementById('catchMax').value : null);
-  const dexMin = parseVal(document.getElementById('dexMin') ? document.getElementById('dexMin').value : null);
-  const dexMax = parseVal(document.getElementById('dexMax') ? document.getElementById('dexMax').value : null);
+  const heightMin = parseVal(document.getElementById('height-min') ? document.getElementById('height-min').value : null);
+  const heightMax = parseVal(document.getElementById('height-max') ? document.getElementById('height-max').value : null);
+  const weightMin = parseVal(document.getElementById('weight-min') ? document.getElementById('weight-min').value : null);
+  const weightMax = parseVal(document.getElementById('weight-max') ? document.getElementById('weight-max').value : null);
+  const catchMin = parseVal(document.getElementById('catch-min') ? document.getElementById('catch-min').value : null);
+  const catchMax = parseVal(document.getElementById('catch-max') ? document.getElementById('catch-max').value : null);
+  const dexMin = parseVal(document.getElementById('dex-min') ? document.getElementById('dex-min').value : null);
+  const dexMax = parseVal(document.getElementById('dex-max') ? document.getElementById('dex-max').value : null);
+  const selectedShapes = getSelectedAttributeValues('shape');
+  const selectedColors = getSelectedAttributeValues('color');
+  const selectedEggGroups = getSelectedAttributeValues('eggGroup');
 
   filteredPokemon = all.filter((pokemon) => {
     const groupForms = pokemon.groupForms || [pokemon];
@@ -1090,11 +1224,26 @@ function applyFilter() {
       if (!hasTwo) return false;
     }
 
+    if (selectedShapes.length > 0 && !selectedShapes.includes(String(pokemon.shape || '').trim())) return false;
+    if (selectedColors.length > 0 && !selectedColors.includes(String(pokemon.color || '').trim())) return false;
+    if (selectedEggGroups.length > 0) {
+      const eggGroups = [pokemon.eggGroup1, pokemon.eggGroup2].map((value) => String(value || '').trim());
+      const noEggsDiscoveredSelected = selectedEggGroups.some((group) => group.toLowerCase() === 'no eggs discovered');
+      if (noEggsDiscoveredSelected) {
+        if (!eggGroups.some((group) => group.toLowerCase() === 'no eggs discovered')) return false;
+      } else if (eggGroupLogic === 'and') {
+        if (!selectedEggGroups.every((group) => eggGroups.includes(group))) return false;
+      } else if (!selectedEggGroups.some((group) => eggGroups.includes(group))) {
+        return false;
+      }
+    }
+
     // generation
-    if (genSel && genSel !== 'any') {
-      const rng = GEN_RANGES[Number(genSel)];
+    if (selectedGenerations.length > 0) {
       const dexNum = Number(String(pokemon.number).replace(/^0+/, '')) || 0;
-      if (!(dexNum >= rng[0] && dexNum <= rng[1])) return false;
+      const pokemonGeneration = Object.entries(GEN_RANGES)
+        .find(([, range]) => dexNum >= range[0] && dexNum <= range[1]);
+      if (!pokemonGeneration || !selectedGenerations.includes(Number(pokemonGeneration[0]))) return false;
     }
 
     // base stat filters
@@ -1206,9 +1355,9 @@ function renderDetails(pokemon) {
           <section class="meta-card stats-card">
             <div class="detail-meta-row">
               <div class="meta-grid">
-                ${renderMetaItem('Shape', pokemon.shape)}
-                ${renderMetaItem('Color', pokemon.color)}
-                ${renderMetaItem('Egg Group', `${pokemon.eggGroup1}${pokemon.eggGroup2 ? ' / ' + pokemon.eggGroup2 : ''}`)}
+                ${renderMetaItem('Shape', pokemon.shape, '', 'shape')}
+                ${renderMetaItem('Color', pokemon.color, '', 'color')}
+                ${renderMetaItem('Egg Group', `${pokemon.eggGroup1}${pokemon.eggGroup2 ? ' / ' + pokemon.eggGroup2 : ''}`, '', 'egg-group')}
                 ${renderMetaItem('Egg Cycles', pokemon.eggCycles, '', 'egg-cycles', pokemon.eggSteps)}
                 ${renderMetaItem('Catch Rate', pokemon.catchRate, '', 'catch-rate')}
                 ${renderMetaItem('Level Rate', pokemon.levelRate, '', 'level-rate', pokemon.totalXP)}
@@ -1609,10 +1758,12 @@ function escapeHtml(text) {
 }
 
 function scrollToSelected() {
-  const selectedCard = Array.from(document.querySelectorAll('.pokemon-card')).find((card) => card.classList.contains('active'));
-  if (selectedCard) {
-    selectedCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }
+  const list = elements.pokemonList;
+  const selectedCard = list?.querySelector('.pokemon-card.active');
+  if (!list || !selectedCard) return;
+
+  const targetTop = selectedCard.offsetTop - (list.clientHeight - selectedCard.offsetHeight) / 2;
+  list.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' });
 }
 
 // --- Type and move popup helpers ---
@@ -2002,6 +2153,94 @@ function showEggCyclePopup(eggCycles, eggSteps, clientX, clientY, targetElement)
   }
 }
 
+function showEggGroupPopup(pokemon, clientX, clientY, targetElement) {
+  createMovePopup();
+  const popup = document.getElementById('move-popup');
+  resetPopupTheme(popup);
+  const eggGroups = [...new Set([pokemon.eggGroup1, pokemon.eggGroup2]
+    .map((group) => String(group || '').trim())
+    .filter(Boolean))];
+  const rows = eggGroups.map((group) => {
+    const count = allPokemon.filter((otherPokemon) => (
+      otherPokemon !== pokemon
+      && [otherPokemon.eggGroup1, otherPokemon.eggGroup2]
+        .map((value) => String(value || '').trim())
+        .includes(group)
+    )).length;
+    return `<div style="display:flex;justify-content:space-between;gap:1.5rem;"><span>${escapeHtml(group)}</span><strong>${count} other ${count === 1 ? 'Pokemon' : 'Pokemon'}</strong></div>`;
+  }).join('');
+
+  popup.innerHTML = `
+    <div style="font-size:10px;letter-spacing:.16em;text-transform:uppercase;text-align:center;color:#93c5fd;margin-bottom:7px;">Egg Group</div>
+    <div style="display:grid;gap:6px;color:#dbeafe;">${rows || '<div style="text-align:center;color:#cbd5e1;">No egg group</div>'}</div>
+  `;
+  popup.setAttribute('aria-hidden', 'false');
+  if (!popup.classList.contains('visible')) popup.classList.add('visible');
+
+  const offset = 8;
+  const width = popup.offsetWidth || 240;
+  const height = popup.offsetHeight || 90;
+  let left = clientX + offset;
+  let top = clientY + offset;
+
+  if (targetElement && typeof targetElement.getBoundingClientRect === 'function') {
+    const rect = targetElement.getBoundingClientRect();
+    left = Math.round(rect.left + rect.width / 2 - width / 2);
+    top = rect.top - height - offset;
+    if (top < 8) top = rect.bottom + offset;
+  }
+
+  if (left < 8) left = 8;
+  if (left + width + 8 > window.innerWidth) left = Math.max(8, window.innerWidth - width - 8);
+  if (top + height + 8 > window.innerHeight) top = Math.max(8, window.innerHeight - height - 8);
+  popup.style.left = `${Math.max(8, Math.round(left))}px`;
+  popup.style.top = `${Math.max(8, Math.round(top))}px`;
+
+  if (movePopupHideTimer) {
+    clearTimeout(movePopupHideTimer);
+    movePopupHideTimer = null;
+  }
+}
+
+function showAttributeCountPopup(label, value, clientX, clientY, targetElement) {
+  createMovePopup();
+  const popup = document.getElementById('move-popup');
+  resetPopupTheme(popup);
+  const count = allPokemon.filter((pokemon) => pokemon !== selectedPokemon && String(pokemon[value.key] || '').trim() === value.value).length;
+
+  popup.innerHTML = `
+    <div style="font-size:10px;letter-spacing:.16em;text-transform:uppercase;text-align:center;color:#93c5fd;margin-bottom:7px;">${escapeHtml(label)}</div>
+    <div style="font-size:20px;line-height:1.15;font-weight:800;text-align:center;color:#ffffff;margin-bottom:5px;">${escapeHtml(value.value || '-')}</div>
+    <div style="text-align:center;color:#dbeafe;font-weight:700;">${count} other ${count === 1 ? 'Pokemon' : 'Pokemon'}</div>
+  `;
+  popup.setAttribute('aria-hidden', 'false');
+  if (!popup.classList.contains('visible')) popup.classList.add('visible');
+
+  const offset = 8;
+  const width = popup.offsetWidth || 220;
+  const height = popup.offsetHeight || 90;
+  let left = clientX + offset;
+  let top = clientY + offset;
+
+  if (targetElement && typeof targetElement.getBoundingClientRect === 'function') {
+    const rect = targetElement.getBoundingClientRect();
+    left = Math.round(rect.left + rect.width / 2 - width / 2);
+    top = rect.top - height - offset;
+    if (top < 8) top = rect.bottom + offset;
+  }
+
+  if (left < 8) left = 8;
+  if (left + width + 8 > window.innerWidth) left = Math.max(8, window.innerWidth - width - 8);
+  if (top + height + 8 > window.innerHeight) top = Math.max(8, window.innerHeight - height - 8);
+  popup.style.left = `${Math.max(8, Math.round(left))}px`;
+  popup.style.top = `${Math.max(8, Math.round(top))}px`;
+
+  if (movePopupHideTimer) {
+    clearTimeout(movePopupHideTimer);
+    movePopupHideTimer = null;
+  }
+}
+
 function attachBaseStatHoverHandlers() {
   const container = elements.details;
   if (!container) return;
@@ -2106,6 +2345,49 @@ function attachBaseStatHoverHandlers() {
     });
 
     metaItem.dataset.eggCyclesHoverBound = '1';
+  });
+
+  container.querySelectorAll('.egg-group-meta-item').forEach((metaItem) => {
+    if (metaItem.dataset.eggGroupHoverBound === '1') return;
+    if (!selectedPokemon) return;
+
+    metaItem.addEventListener('mouseenter', (event) => {
+      showEggGroupPopup(selectedPokemon, event.clientX, event.clientY, metaItem);
+    });
+    metaItem.addEventListener('mousemove', (event) => {
+      showEggGroupPopup(selectedPokemon, event.clientX, event.clientY, metaItem);
+    });
+    metaItem.addEventListener('mouseleave', () => {
+      if (movePopupHideTimer) clearTimeout(movePopupHideTimer);
+      movePopupHideTimer = setTimeout(hideMovePopup, 180);
+    });
+
+    metaItem.dataset.eggGroupHoverBound = '1';
+  });
+
+  ['shape', 'color'].forEach((attributeKey) => {
+    const metaType = `${attributeKey}-meta-item`;
+    container.querySelectorAll(`.${metaType}`).forEach((metaItem) => {
+      const boundKey = `${attributeKey}HoverBound`;
+      if (metaItem.dataset[boundKey] === '1') return;
+      const label = metaItem.querySelector('strong')?.textContent || attributeKey;
+      const attributeValue = metaItem.querySelector('p')?.textContent?.trim() || '';
+      if (!selectedPokemon || !attributeValue) return;
+
+      const value = { key: attributeKey, value: attributeValue };
+      metaItem.addEventListener('mouseenter', (event) => {
+        showAttributeCountPopup(label, value, event.clientX, event.clientY, metaItem);
+      });
+      metaItem.addEventListener('mousemove', (event) => {
+        showAttributeCountPopup(label, value, event.clientX, event.clientY, metaItem);
+      });
+      metaItem.addEventListener('mouseleave', () => {
+        if (movePopupHideTimer) clearTimeout(movePopupHideTimer);
+        movePopupHideTimer = setTimeout(hideMovePopup, 180);
+      });
+
+      metaItem.dataset[boundKey] = '1';
+    });
   });
 }
 
