@@ -10,9 +10,9 @@
   <div class="app-shell">
     <header class="hero">
       <div>
-        <p class="eyebrow">Live Pokédex</p>
-        <h1>Interactive Pokémon Explorer</h1>
-        <p class="hero-copy">Data loads directly from the published Google Sheet and updates your Pokémon profile in real time.</p>
+        <p id="heroEyebrow" class="eyebrow">Live Pokédex</p>
+        <h1 id="heroTitle">Interactive Pokémon Explorer</h1>
+        <p id="heroCopy" class="hero-copy">Data loads directly from the published Google Sheet and updates your Pokémon profile in real time.</p>
       </div>
       <div class="hero-actions">
         <div class="hero-buttons">
@@ -20,11 +20,15 @@
           <button id="sidebarToggleButton" type="button" class="button sidebar-toggle-button" aria-expanded="true">Hide list & filters</button>
           <button id="profileButton" type="button" class="button profile-button">Log in</button>
         </div>
+        <div class="dex-switcher" role="tablist" aria-label="Dex view">
+          <button id="pokedexTab" class="dex-tab active" type="button" role="tab" aria-selected="true" aria-controls="pokedexView">Pokédex</button>
+          <button id="movedexTab" class="dex-tab" type="button" role="tab" aria-selected="false" aria-controls="movedexView">Movedex</button>
+        </div>
         <div id="status" class="status-message">Loading sheet data...</div>
       </div>
     </header>
 
-    <main class="layout">
+    <main id="pokedexView" class="layout">
       <aside class="panel panel-left">
         <section class="list-card">
           <div class="search-row">
@@ -155,6 +159,60 @@
         <div id="details" class="details-placeholder">
           <h2>Pokémon details will appear here</h2>
           <p>Choose a Pokémon from the list or search for one by name.</p>
+        </div>
+      </section>
+    </main>
+
+    <main id="movedexView" class="layout movedex-view" hidden>
+      <aside class="panel panel-left">
+        <section class="list-card">
+          <div class="search-row">
+            <label for="moveSearchInput">Search moves</label>
+            <input id="moveSearchInput" type="search" placeholder="Type move name, number, or type..." autocomplete="off" />
+          </div>
+          <div class="section-header">
+            <h2>Moves</h2>
+            <span id="moveListCount" class="small">0 available</span>
+          </div>
+          <div id="moveList" class="pokemon-list move-list"></div>
+        </section>
+
+        <section class="type-filter-card move-filter-card">
+          <div class="section-header">
+            <h2>Filters</h2>
+            <button id="clearMoveFiltersButton" type="button" class="filters-button">Clear filters</button>
+          </div>
+          <div id="moveFilterTabs" class="filter-tabs" role="tablist" aria-label="Move filters">
+            <button type="button" class="filter-tab active" data-move-panel="type" role="tab" aria-selected="true">Type</button>
+            <button type="button" class="filter-tab" data-move-panel="category" role="tab" aria-selected="false">Category</button>
+            <button type="button" class="filter-tab" data-move-panel="stats" role="tab" aria-selected="false">Stats</button>
+            <button type="button" class="filter-tab" data-move-panel="target" role="tab" aria-selected="false">Target</button>
+          </div>
+          <div id="moveFilterPanels">
+            <div id="movePanel-type" class="filter-panel">
+              <div id="moveTypeButtons" class="type-buttons"></div>
+            </div>
+            <div id="movePanel-category" class="filter-panel" style="display:none">
+              <div id="moveCategoryButtons" class="generation-grid"></div>
+            </div>
+            <div id="movePanel-stats" class="filter-panel" style="display:none">
+              <div class="section-header move-stats-filter-header">
+                <h3>Move Stats</h3>
+                <button id="clearMoveStatsButton" type="button" class="filters-button">All</button>
+              </div>
+              <div id="moveNumericFilters" class="filter-grid"></div>
+            </div>
+            <div id="movePanel-target" class="filter-panel" style="display:none">
+              <div id="moveTargetButtons" class="generation-grid move-target-filter-buttons"></div>
+            </div>
+          </div>
+        </section>
+      </aside>
+
+      <section class="panel panel-right" id="moveDetailsPanel">
+        <div id="moveDetails" class="details-placeholder">
+          <h2>Move details will appear here</h2>
+          <p>Choose a move from the list or search by name.</p>
         </div>
       </section>
     </main>
