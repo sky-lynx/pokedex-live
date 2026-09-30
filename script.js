@@ -2,6 +2,7 @@ const SHEET_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTwDxqxofxdx7
 const SHEET_HTML = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTwDxqxofxdx7M2HU-pMFBFBcMDI6mIVBeVim1sxIC_zalARL4Z7DVNiPkhGwY4ZKmVpC9FETrjZtOH/pubhtml/sheet?headers=false&gid=1685697799';
 const POKEDEX_SHEET_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT91AhjLXEf0LGvk-ck5jcQJOzEHIaBajUKI92zfHkrg1I4SrTnABPLXyveLTNRKegrImW49xxmY8L3/pub?gid=0&single=true&output=csv';
 const POKEDEX_SHEET_HTML = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT91AhjLXEf0LGvk-ck5jcQJOzEHIaBajUKI92zfHkrg1I4SrTnABPLXyveLTNRKegrImW49xxmY8L3/pubhtml/sheet?headers=false&gid=0';
+const ABILITY_SHEET_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT91AhjLXEf0LGvk-ck5jcQJOzEHIaBajUKI92zfHkrg1I4SrTnABPLXyveLTNRKegrImW49xxmY8L3/pub?gid=1698131980&single=true&output=csv';
 const MOVES_SHEET_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTwDxqxofxdx7M2HU-pMFBFBcMDI6mIVBeVim1sxIC_zalARL4Z7DVNiPkhGwY4ZKmVpC9FETrjZtOH/pub?gid=1813387196&single=true&output=csv';
 const MOVES_SHEET_HTML = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTwDxqxofxdx7M2HU-pMFBFBcMDI6mIVBeVim1sxIC_zalARL4Z7DVNiPkhGwY4ZKmVpC9FETrjZtOH/pubhtml/sheet?headers=false&gid=1813387196';
 
@@ -56,7 +57,12 @@ const elements = {
   status: document.getElementById('status'),
   details: document.getElementById('details'),
   randomButton: document.getElementById('randomButton'),
-  profileButton: document.getElementById('profileButton')
+  profileButton: document.getElementById('profileButton'),
+  sidebarToggleButton: document.getElementById('sidebarToggleButton'),
+  floatingActions: document.getElementById('floatingActions'),
+  floatingRandomButton: document.getElementById('floatingRandomButton'),
+  floatingSidebarButton: document.getElementById('floatingSidebarButton'),
+  floatingProfileButton: document.getElementById('floatingProfileButton')
 };
 
 let allPokemon = [];
@@ -69,6 +75,7 @@ let typingFilterValue = 'any';
 let eggGroupLogic = 'or';
 let groupsByDex = {};
 let movesLookup = {};
+let abilityDescriptionsLookup = {};
 let movePopupHideTimer = null;
 let movePopupPinned = false;
 let currentUsername = localStorage.getItem('pokedexCurrentUser') || '';
@@ -94,12 +101,17 @@ window.addEventListener('DOMContentLoaded', () => {
 
 async function initialize() {
   bindProfileControls();
+  bindSidebarToggle();
+  bindFloatingActions();
   elements.status.textContent = 'Loading sheet data from Google...';
   try {
-    const [rawRows, pokedexRows, movesRows] = await Promise.all([loadData(), loadPokedexData(), loadMovesData()]);
+    const [rawRows, pokedexRows, movesRows, abilityRows] = await Promise.all([
+      loadData(), loadPokedexData(), loadMovesData(), loadAbilityData()
+    ]);
     allPokemon = buildPokemon(rawRows);
     const pokedexLookup = buildPokedexLookup(pokedexRows);
     movesLookup = buildMovesLookup(movesRows);
+    abilityDescriptionsLookup = buildAbilityDescriptionsLookup(abilityRows);
     allPokemon.forEach((pokemon) => {
       pokemon.pokedexEntries = pokedexLookup[pokemon.formKey] || pokedexLookup[normalizePokemonName(pokemon.name)] || [];
     });
@@ -132,6 +144,35 @@ async function initialize() {
   });
 };
 
+function bindFloatingActions() {
+  elements.floatingRandomButton?.addEventListener('click', () => elements.randomButton?.click());
+  elements.floatingSidebarButton?.addEventListener('click', () => elements.sidebarToggleButton?.click());
+  elements.floatingProfileButton?.addEventListener('click', () => elements.profileButton?.click());
+
+  const heroButtons = document.querySelector('.hero-buttons');
+  if (!heroButtons || !elements.floatingActions || !('IntersectionObserver' in window)) return;
+
+  const observer = new IntersectionObserver(([entry]) => {
+    elements.floatingActions.classList.toggle('visible', entry.intersectionRatio === 0);
+  }, { threshold: [0, 1] });
+  observer.observe(heroButtons);
+}
+
+function bindSidebarToggle() {
+  elements.sidebarToggleButton?.addEventListener('click', () => {
+    const layout = document.querySelector('.layout');
+    if (!layout) return;
+    const collapsed = layout.classList.toggle('sidebar-collapsed');
+    const label = collapsed ? 'Show list & filters' : 'Hide list & filters';
+    elements.sidebarToggleButton.setAttribute('aria-expanded', String(!collapsed));
+    elements.sidebarToggleButton.textContent = label;
+    if (elements.floatingSidebarButton) {
+      elements.floatingSidebarButton.setAttribute('aria-expanded', String(!collapsed));
+      elements.floatingSidebarButton.textContent = label;
+    }
+  });
+}
+
 function getProfiles() {
   try {
     return JSON.parse(localStorage.getItem(PROFILE_STORAGE_KEY) || '{}');
@@ -155,7 +196,9 @@ function getPokemonKey(pokemon) {
 
 function updateProfileButton() {
   if (!elements.profileButton) return;
-  elements.profileButton.textContent = currentUsername ? `Log out (${currentUsername})` : 'Log in';
+  const label = currentUsername ? `Log out (${currentUsername})` : 'Log in';
+  elements.profileButton.textContent = label;
+  if (elements.floatingProfileButton) elements.floatingProfileButton.textContent = label;
 }
 
 function bindProfileControls() {
@@ -166,7 +209,7 @@ function bindProfileControls() {
       localStorage.removeItem('pokedexCurrentUser');
       updateProfileButton();
       applyFilter();
-      if (selectedPokemon) renderDetails(selectedPokemon);
+      if (selectedPokemon) refreshPersonalTools(selectedPokemon);
       return;
     }
     openAuthModal('login');
@@ -244,7 +287,7 @@ function handleAuthSubmit(event) {
   closeAuthModal();
   form.reset();
   applyFilter();
-  if (selectedPokemon) renderDetails(selectedPokemon);
+  if (selectedPokemon) refreshPersonalTools(selectedPokemon);
 }
 
 function resetFilters() {
@@ -361,6 +404,69 @@ async function loadMovesData() {
     const htmlText = await response.text();
     return parseSheetHTML(htmlText);
   }
+}
+
+async function loadAbilityData() {
+  try {
+    const response = await fetch(ABILITY_SHEET_CSV);
+    if (!response.ok) throw new Error('Ability CSV fetch failed');
+    return parseCSV(await response.text());
+  } catch (error) {
+    console.warn('Unable to load ability descriptions', error);
+    return [];
+  }
+}
+
+function buildAbilityDescriptionsLookup(rows) {
+  const headerIndex = rows.findIndex((row) => row.some((cell) => /^(ability|ability name)$/i.test(String(cell || '').trim())));
+  if (headerIndex < 0) return {};
+
+  const headers = rows[headerIndex];
+  const abilityColumn = headers.findIndex((cell) => /^(ability|ability name)$/i.test(String(cell || '').trim()));
+  if (abilityColumn < 0) return {};
+
+  const abilityGameNames = {
+    RSE: 'Ruby / Sapphire / Emerald',
+    FRLG: 'FireRed / LeafGreen',
+    DPPL: 'Diamond / Pearl / Platinum',
+    HGSS: 'HeartGold / SoulSilver',
+    BW: 'Black / White',
+    B2W2: 'Black 2 / White 2',
+    XY: 'X / Y',
+    OAAS: 'Omega Ruby / Alpha Sapphire',
+    SM: 'Sun / Moon',
+    USUM: 'Ultra Sun / Ultra Moon',
+    SWSH: 'Sword / Shield',
+    BDSP: 'Brilliant Diamond / Shining Pearl',
+    SV: 'Scarlet / Violet',
+    CHA: 'Pokémon Champions'
+  };
+  const gamesByHeader = new Map(POKEDEX_ENTRY_COLUMNS.map((column) => [normalizeGameKey(column.game), column.game]));
+  const gameColumns = headers.reduce((columns, header, index) => {
+    const headerName = String(header || '').trim();
+    if (index <= abilityColumn || !headerName) return columns;
+    const normalizedHeader = normalizeGameKey(headerName);
+    const game = abilityGameNames[headerName.toUpperCase()] || gamesByHeader.get(normalizedHeader) || headerName;
+    columns.push({ index, game });
+    return columns;
+  }, []);
+
+  return rows.slice(headerIndex + 1).reduce((lookup, row) => {
+    const abilityName = String(row[abilityColumn] || '').trim();
+    if (!abilityName) return lookup;
+    const key = normalizePokemonName(abilityName);
+    const latestDescription = [...gameColumns].reverse().find((column) => {
+      const value = String(row[column.index] || '').trim();
+      return value && value.toLowerCase() !== 'undefined';
+    });
+    if (latestDescription) {
+      lookup[key] = [{
+        game: latestDescription.game,
+        description: String(row[latestDescription.index]).trim()
+      }];
+    }
+    return lookup;
+  }, {});
 }
 
 function buildPokedexLookup(rows) {
@@ -1526,6 +1632,8 @@ function renderDetails(pokemon) {
         </div>
       </div>
 
+      ${renderStatCalculator(pokemon)}
+
       <div class="stats-row">
         <section class="stats-card">
           <div class="section-header">
@@ -1623,45 +1731,7 @@ function renderDetails(pokemon) {
     elements.searchInput?.focus({ preventScroll: true });
   });
 
-  elements.details.querySelector('.personal-tools-lock')?.addEventListener('click', () => {
-    openAuthModal('login');
-  });
-
-  const favoriteButton = elements.details.querySelector('.favorite-button');
-  favoriteButton?.addEventListener('click', () => {
-    if (!currentUsername) {
-      openAuthModal('login');
-      return;
-    }
-    const profiles = getProfiles();
-    const profile = profiles[currentUsername];
-    const key = getPokemonKey(pokemon);
-    const favoriteIndex = profile.favorites.indexOf(key);
-    if (favoriteIndex >= 0) profile.favorites.splice(favoriteIndex, 1);
-    else profile.favorites.push(key);
-    saveProfiles(profiles);
-    const isFavorite = profile.favorites.includes(key);
-    favoriteButton.classList.toggle('active', isFavorite);
-    favoriteButton.textContent = isFavorite ? '★ Favorited' : '☆ Favorite';
-    applyFilter();
-  });
-
-  elements.details.querySelector('.save-note-button')?.addEventListener('click', () => {
-    if (!currentUsername) {
-      openAuthModal('login');
-      return;
-    }
-    const profiles = getProfiles();
-    const profile = profiles[currentUsername];
-    const key = getPokemonKey(pokemon);
-    const note = elements.details.querySelector('.pokemon-note')?.value.trim() || '';
-    if (note) profile.notes[key] = note;
-    else delete profile.notes[key];
-    saveProfiles(profiles);
-    applyFilter();
-    const message = elements.details.querySelector('.note-saved-message');
-    if (message) message.textContent = 'Saved';
-  });
+  bindPersonalToolHandlers(pokemon);
 
   if (groupForms.length > 1) {
     elements.details.querySelectorAll('.form-select').forEach((button) => {
@@ -1691,6 +1761,130 @@ function renderDetails(pokemon) {
   attachBaseStatHoverHandlers();
   attachPopupClickHandler();
   attachMoveHoverHandlers();
+  bindStatCalculator(pokemon);
+}
+
+const NATURES = {
+  Hardy: ['ATK', 'ATK'], Lonely: ['ATK', 'DEF'], Adamant: ['ATK', 'SpA'], Naughty: ['ATK', 'SpD'], Brave: ['ATK', 'SPE'],
+  Bold: ['DEF', 'ATK'], Docile: ['DEF', 'DEF'], Impish: ['DEF', 'SpA'], Lax: ['DEF', 'SpD'], Relaxed: ['DEF', 'SPE'],
+  Modest: ['SpA', 'ATK'], Mild: ['SpA', 'DEF'], Bashful: ['SpA', 'SpA'], Rash: ['SpA', 'SpD'], Quiet: ['SpA', 'SPE'],
+  Calm: ['SpD', 'ATK'], Gentle: ['SpD', 'DEF'], Careful: ['SpD', 'SpA'], Quirky: ['SpD', 'SpD'], Sassy: ['SpD', 'SPE'],
+  Timid: ['SPE', 'ATK'], Hasty: ['SPE', 'DEF'], Jolly: ['SPE', 'SpA'], Naive: ['SPE', 'SpD'], Serious: ['SPE', 'SPE']
+};
+
+function getNatureLabel(nature) {
+  const [raised, lowered] = NATURES[nature] || [];
+  return raised === lowered ? nature : `${nature} (${raised} ↑ | ${lowered} ↓)`;
+}
+
+function renderStatCalculator(pokemon) {
+  const natureOptions = Object.keys(NATURES).sort((left, right) => left.localeCompare(right)).map((nature) => `<button type="button" class="nature-option" data-nature="${nature}">${getNatureLabel(nature)}</button>`).join('');
+  const rows = ['HP', 'ATK', 'DEF', 'SpA', 'SpD', 'SPE'].map((stat) => `
+    <div class="calculator-stat-row" data-calc-stat="${stat}">
+      <strong>${stat}</strong><span class="calculator-result">-</span>
+      <label>IV <input class="calculator-iv" type="number" min="0" max="31" value="31" /></label>
+      <label>EV <input class="calculator-ev" type="number" min="0" max="252" step="4" value="0" /></label>
+    </div>`).join('');
+  return `
+    <section class="stat-calculator">
+      <button type="button" class="calculator-toggle" aria-expanded="false">Stat Calculator</button>
+      <div class="calculator-content">
+        <div class="calculator-controls">
+        <label>Level <input class="calculator-level" type="number" min="1" max="100" value="50" /></label>
+        <div class="nature-picker">
+          <span class="calculator-label">Nature</span>
+          <button type="button" class="nature-trigger" aria-expanded="false" data-nature="Hardy">${getNatureLabel('Hardy')}</button>
+          <div class="nature-menu" hidden>${natureOptions}</div>
+        </div>
+        <label class="calculator-unlimited-label"><input class="calculator-unlimited" type="checkbox" /> No limit</label>
+        </div>
+        <div class="calculator-stats">${rows}</div>
+      </div>
+    </section>`;
+}
+
+function bindStatCalculator(pokemon) {
+  const calculator = elements.details.querySelector('.stat-calculator');
+  if (!calculator) return;
+  const toggle = calculator.querySelector('.calculator-toggle');
+  const content = calculator.querySelector('.calculator-content');
+  toggle.addEventListener('click', () => {
+    const open = calculator.classList.toggle('open');
+    toggle.setAttribute('aria-expanded', String(open));
+  });
+
+  const natureTrigger = calculator.querySelector('.nature-trigger');
+  const natureMenu = calculator.querySelector('.nature-menu');
+  const unlimitedToggle = calculator.querySelector('.calculator-unlimited');
+  natureTrigger.addEventListener('click', () => {
+    const open = natureMenu.hidden;
+    natureMenu.hidden = !open;
+    natureTrigger.setAttribute('aria-expanded', String(open));
+  });
+  natureMenu.querySelectorAll('.nature-option').forEach((option) => {
+    option.addEventListener('click', () => {
+      natureTrigger.dataset.nature = option.dataset.nature;
+      natureTrigger.textContent = getNatureLabel(option.dataset.nature);
+      natureMenu.hidden = true;
+      natureTrigger.setAttribute('aria-expanded', 'false');
+      update();
+    });
+  });
+
+  document.addEventListener('click', (event) => {
+    if (!natureMenu.hidden && !event.target.closest('.nature-picker')) {
+      natureMenu.hidden = true;
+      natureTrigger.setAttribute('aria-expanded', 'false');
+    }
+  });
+
+  const clampInput = (input, minimum, maximum) => {
+    const clamp = () => {
+      if (input.value === '') return;
+      const numericValue = Number(input.value);
+      if (!Number.isFinite(numericValue)) {
+        input.value = String(minimum);
+        return;
+      }
+      input.value = String(Math.max(minimum, unlimitedToggle.checked ? numericValue : Math.min(maximum, numericValue)));
+    };
+    input.addEventListener('input', clamp);
+    input.addEventListener('change', () => {
+      if (input.value === '') input.value = String(minimum);
+      clamp();
+    });
+  };
+  clampInput(calculator.querySelector('.calculator-level'), 1, 100);
+  calculator.querySelectorAll('.calculator-iv').forEach((input) => clampInput(input, 0, 31));
+  calculator.querySelectorAll('.calculator-ev').forEach((input) => clampInput(input, 0, 252));
+  unlimitedToggle.addEventListener('change', () => {
+    const inputs = calculator.querySelectorAll('.calculator-level, .calculator-iv, .calculator-ev');
+    inputs.forEach((input) => {
+      if (unlimitedToggle.checked) input.removeAttribute('max');
+      else input.setAttribute('max', input.classList.contains('calculator-level') ? '100' : input.classList.contains('calculator-iv') ? '31' : '252');
+      input.dispatchEvent(new Event('change'));
+    });
+    update();
+  });
+
+  const update = () => {
+    const level = Math.max(1, Number(calculator.querySelector('.calculator-level').value) || 1);
+    const nature = natureTrigger.dataset.nature || 'Hardy';
+    const [raised, lowered] = NATURES[nature] || [];
+    calculator.querySelectorAll('.calculator-stat-row').forEach((row) => {
+      const stat = row.dataset.calcStat;
+      const iv = Math.max(0, Number(row.querySelector('.calculator-iv').value) || 0);
+      const ev = Math.max(0, Number(row.querySelector('.calculator-ev').value) || 0);
+      const base = Number(pokemon.baseStats[stat]) || 0;
+      const core = Math.floor(((2 * base + iv + Math.floor(ev / 4)) * level) / 100);
+      let value = stat === 'HP' ? core + level + 10 : core + 5;
+      if (stat !== 'HP') value = Math.floor(value * (stat === raised && raised !== lowered ? 1.1 : stat === lowered && raised !== lowered ? 0.9 : 1));
+      row.querySelector('.calculator-result').textContent = value;
+    });
+  };
+  calculator.addEventListener('input', update);
+  calculator.addEventListener('change', update);
+  update();
 }
 
 function renderPersonalTools(pokemon) {
@@ -1716,6 +1910,49 @@ function renderPersonalTools(pokemon) {
       ${currentUsername ? '' : '<button type="button" class="personal-tools-lock">Login to use this feature</button>'}
     </section>
   `;
+}
+
+function refreshPersonalTools(pokemon) {
+  const currentTools = elements.details.querySelector('.personal-tools');
+  if (!currentTools) return;
+  currentTools.outerHTML = renderPersonalTools(pokemon);
+  bindPersonalToolHandlers(pokemon);
+}
+
+function bindPersonalToolHandlers(pokemon) {
+  elements.details.querySelector('.personal-tools-lock')?.addEventListener('click', () => {
+    openAuthModal('login');
+  });
+
+  const favoriteButton = elements.details.querySelector('.favorite-button');
+  favoriteButton?.addEventListener('click', () => {
+    if (!currentUsername) return;
+    const profiles = getProfiles();
+    const profile = profiles[currentUsername];
+    const key = getPokemonKey(pokemon);
+    const favoriteIndex = profile.favorites.indexOf(key);
+    if (favoriteIndex >= 0) profile.favorites.splice(favoriteIndex, 1);
+    else profile.favorites.push(key);
+    saveProfiles(profiles);
+    const isFavorite = profile.favorites.includes(key);
+    favoriteButton.classList.toggle('active', isFavorite);
+    favoriteButton.textContent = isFavorite ? '★ Favorited' : '☆ Favorite';
+    applyFilter();
+  });
+
+  elements.details.querySelector('.save-note-button')?.addEventListener('click', () => {
+    if (!currentUsername) return;
+    const profiles = getProfiles();
+    const profile = profiles[currentUsername];
+    const key = getPokemonKey(pokemon);
+    const note = elements.details.querySelector('.pokemon-note')?.value.trim() || '';
+    if (note) profile.notes[key] = note;
+    else delete profile.notes[key];
+    saveProfiles(profiles);
+    applyFilter();
+    const message = elements.details.querySelector('.note-saved-message');
+    if (message) message.textContent = 'Saved';
+  });
 }
 
 function renderTypeBadge(type, options = {}) {
@@ -1786,10 +2023,16 @@ function renderMetaItem(label, value, rankingKey = '', metaType = '', metaExtra 
 }
 
 function renderAbilityBox(ability, hidden = false) {
+  const tooltipId = `ability-tooltip-${normalizePokemonName(ability).replace(/\s+/g, '-')}`;
+  const descriptions = abilityDescriptionsLookup[normalizePokemonName(ability)] || [];
+  const tooltipContent = descriptions.length
+    ? descriptions.map(({ game, description }) => `<div class="ability-description-entry"><strong>${escapeHtml(game)}</strong><span>${escapeHtml(description)}</span></div>`).join('')
+    : '<span class="ability-description-unavailable">No ability description available.</span>';
   return `
-    <button type="button" class="ability-box${hidden ? ' hidden' : ''}" title="Hover for ability description">
+    <button type="button" class="ability-box${hidden ? ' hidden' : ''}" aria-describedby="${escapeHtml(tooltipId)}">
       <span>${ability}</span>
       ${hidden ? '<span class="ability-tag">Hidden</span>' : ''}
+      <span class="ability-tooltip" id="${escapeHtml(tooltipId)}" role="tooltip">${tooltipContent}</span>
     </button>
   `;
 }
@@ -2180,11 +2423,27 @@ function attachGameHoverHandlers() {
 
 function attachPopupClickHandler() {
   const container = elements.details;
-  if (!container || container.dataset.popupClickBound === '1') return;
+  if (!container) return;
+
+  container.querySelectorAll('.ability-box').forEach((button) => {
+    bindPopupPinClick(button, true);
+  });
+  if (container.dataset.popupClickBound === '1') return;
 
   container.addEventListener('click', (event) => {
-    const trigger = event.target.closest('.type-pill-button, .game-pill, .base-stat-line, .ranking-meta-item, .catch-rate-meta-item, .level-rate-meta-item, .egg-cycles-meta-item, .moveset-table tbody tr');
+    const trigger = event.target.closest('.type-pill-button, .game-pill, .base-stat-line, .ranking-meta-item, .catch-rate-meta-item, .level-rate-meta-item, .egg-cycles-meta-item, .shape-meta-item, .color-meta-item, .egg-group-meta-item, .ability-box, .moveset-table tbody tr');
     if (!trigger || !container.contains(trigger)) return;
+
+    container.querySelectorAll('.ability-box.pinned').forEach((ability) => {
+      if (ability !== trigger) ability.classList.remove('pinned');
+    });
+
+    if (trigger.matches('.ability-box')) {
+      trigger.classList.toggle('pinned');
+      event.stopPropagation();
+      return;
+    }
+
     movePopupPinned = true;
     if (movePopupHideTimer) {
       clearTimeout(movePopupHideTimer);
@@ -2194,6 +2453,24 @@ function attachPopupClickHandler() {
   });
 
   container.dataset.popupClickBound = '1';
+}
+
+function bindPopupPinClick(trigger, abilityTrigger = false) {
+  if (trigger.dataset.popupPinBound === '1') return;
+  trigger.addEventListener('click', (event) => {
+    document.querySelectorAll('.ability-box.pinned').forEach((ability) => {
+      if (ability !== trigger) ability.classList.remove('pinned');
+    });
+
+    if (abilityTrigger) trigger.classList.toggle('pinned');
+    movePopupPinned = true;
+    if (movePopupHideTimer) {
+      clearTimeout(movePopupHideTimer);
+      movePopupHideTimer = null;
+    }
+    event.stopPropagation();
+  });
+  trigger.dataset.popupPinBound = '1';
 }
 
 function getDexNumber(pokemon) {
@@ -2579,6 +2856,7 @@ function attachBaseStatHoverHandlers() {
   container.querySelectorAll('.egg-group-meta-item').forEach((metaItem) => {
     if (metaItem.dataset.eggGroupHoverBound === '1') return;
     if (!selectedPokemon) return;
+    bindPopupPinClick(metaItem);
 
     metaItem.addEventListener('mouseenter', (event) => {
       showEggGroupPopup(selectedPokemon, event.clientX, event.clientY, metaItem);
@@ -2599,6 +2877,7 @@ function attachBaseStatHoverHandlers() {
     container.querySelectorAll(`.${metaType}`).forEach((metaItem) => {
       const boundKey = `${attributeKey}HoverBound`;
       if (metaItem.dataset[boundKey] === '1') return;
+      bindPopupPinClick(metaItem);
       const label = metaItem.querySelector('strong')?.textContent || attributeKey;
       const attributeValue = metaItem.querySelector('p')?.textContent?.trim() || '';
       if (!selectedPokemon || !attributeValue) return;
@@ -2644,10 +2923,12 @@ function createMovePopup() {
 
   document.addEventListener('click', () => {
     movePopupPinned = false;
+    document.querySelectorAll('.ability-box.pinned').forEach((ability) => ability.classList.remove('pinned'));
     hideMovePopup();
   });
   window.addEventListener('scroll', () => {
     movePopupPinned = false;
+    document.querySelectorAll('.ability-box.pinned').forEach((ability) => ability.classList.remove('pinned'));
     hideMovePopup();
   }, true);
 

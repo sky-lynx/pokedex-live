@@ -17,6 +17,7 @@
       <div class="hero-actions">
         <div class="hero-buttons">
           <button id="randomButton" class="button button-primary">Random Pokémon</button>
+          <button id="sidebarToggleButton" type="button" class="button sidebar-toggle-button" aria-expanded="true">Hide list & filters</button>
           <button id="profileButton" type="button" class="button profile-button">Log in</button>
         </div>
         <div id="status" class="status-message">Loading sheet data...</div>
@@ -158,6 +159,12 @@
       </section>
     </main>
   </div>
+
+  <nav id="floatingActions" class="floating-actions" aria-label="Quick actions">
+    <button id="floatingRandomButton" type="button" class="button button-primary">Random Pokémon</button>
+    <button id="floatingSidebarButton" type="button" class="button sidebar-toggle-button">Hide list &amp; filters</button>
+    <button id="floatingProfileButton" type="button" class="button profile-button">Log in</button>
+  </nav>
 
   <div id="authModal" class="auth-modal" hidden>
     <div class="auth-backdrop" data-auth-close></div>
