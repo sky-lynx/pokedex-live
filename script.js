@@ -106,6 +106,7 @@ let groupsByDex = {};
 let movesLookup = {};
 let allMoves = [];
 let filteredMoves = [];
+let moveLearnersLookup = {};
 let moveDescriptionsLookup = {};
 let moveDescriptionGamesets = [];
 let selectedMove = null;
@@ -113,6 +114,7 @@ let selectedMoveTypes = new Set();
 let selectedMoveCategoryFilter = 'any';
 let selectedMoveTarget = 'any';
 let selectedMoveGen = 9;
+let selectedMoveLearnerCategory = 'levelUp';
 let abilityDescriptionsLookup = {};
 let movePopupHideTimer = null;
 let movePopupPinned = false;
@@ -150,6 +152,7 @@ async function initialize() {
     const pokedexLookup = buildPokedexLookup(pokedexRows);
     movesLookup = buildMovesLookup(movesRows);
     allMoves = Object.values(movesLookup).filter((move) => move.name).sort((a, b) => a.name.localeCompare(b.name));
+    moveLearnersLookup = buildMoveLearnersLookup(allPokemon);
     moveDescriptionsLookup = buildMoveDescriptionsLookup(moveDescriptionRows);
     moveDescriptionGamesets = moveDescriptionRows.length ? getMoveDescriptionGamesets(moveDescriptionRows) : [];
     abilityDescriptionsLookup = buildAbilityDescriptionsLookup(abilityRows);
@@ -266,25 +269,59 @@ function bindSidebarToggle() {
 function bindDexSwitcher() {
   const pokedexTab = document.getElementById('pokedexTab');
   const movedexTab = document.getElementById('movedexTab');
+  pokedexTab.addEventListener('click', () => switchDexView(false));
+  movedexTab.addEventListener('click', () => switchDexView(true));
+}
+
+function switchDexView(showMoves) {
   const pokedexView = document.getElementById('pokedexView');
   const movedexView = document.getElementById('movedexView');
-  const switchView = (showMoves) => {
-    pokedexView.hidden = showMoves;
-    movedexView.hidden = !showMoves;
-    pokedexTab.classList.toggle('active', !showMoves);
-    movedexTab.classList.toggle('active', showMoves);
-    pokedexTab.setAttribute('aria-selected', String(!showMoves));
-    movedexTab.setAttribute('aria-selected', String(showMoves));
-    document.getElementById('heroEyebrow').textContent = showMoves ? 'Live Movedex' : 'Live Pokédex';
-    document.getElementById('heroTitle').textContent = showMoves ? 'Interactive Move Explorer' : 'Interactive Pokémon Explorer';
-    document.getElementById('heroCopy').textContent = showMoves
-      ? 'Compare move stats and descriptions across game sets.'
-      : 'Data loads directly from the published Google Sheet and updates your Pokémon profile in real time.';
-    elements.randomButton.hidden = showMoves;
-    elements.floatingRandomButton.hidden = showMoves;
-  };
-  pokedexTab.addEventListener('click', () => switchView(false));
-  movedexTab.addEventListener('click', () => switchView(true));
+  const pokedexTab = document.getElementById('pokedexTab');
+  const movedexTab = document.getElementById('movedexTab');
+  pokedexView.hidden = showMoves;
+  movedexView.hidden = !showMoves;
+  const activeView = showMoves ? movedexView : pokedexView;
+  activeView.classList.remove('dex-view-enter');
+  void activeView.offsetWidth;
+  activeView.classList.add('dex-view-enter');
+  activeView.addEventListener('animationend', () => {
+    activeView.classList.remove('dex-view-enter');
+  }, { once: true });
+  pokedexTab.classList.toggle('active', !showMoves);
+  movedexTab.classList.toggle('active', showMoves);
+  pokedexTab.setAttribute('aria-selected', String(!showMoves));
+  movedexTab.setAttribute('aria-selected', String(showMoves));
+  document.getElementById('heroEyebrow').textContent = showMoves ? 'Live Movedex' : 'Live Pokédex';
+  document.getElementById('heroTitle').textContent = showMoves ? 'Interactive Move Explorer' : 'Interactive Pokémon Explorer';
+  elements.randomButton.hidden = showMoves;
+  elements.floatingRandomButton.hidden = showMoves;
+}
+
+function navigateToPokemon(number, name) {
+  const pokemon = allPokemon.find((entry) => (
+    String(entry.number) === String(number)
+    && normalizePokemonName(entry.name) === normalizePokemonName(name)
+  ));
+  if (!pokemon) return;
+  switchDexView(false);
+  resetFilters();
+  selectPokemon(pokemon);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function navigateToMove(moveId) {
+  const move = movesLookup[moveId];
+  if (!move) return;
+  switchDexView(true);
+  elements.moveSearchInput.value = '';
+  selectedMoveTypes.clear();
+  selectedMoveCategoryFilter = 'any';
+  selectedMoveTarget = 'any';
+  resetMoveRangeFilters();
+  updateMoveFilterButtons();
+  applyMoveFilters();
+  selectMove(move);
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 function getProfiles() {
@@ -457,6 +494,7 @@ function resetFilters() {
 function resetDualRangeFilters() {
   document.querySelectorAll('.dual-range-filter').forEach((control) => {
     const max = Number(control.dataset.rangeMax);
+    const min = Number(control.dataset.rangeMin || 0);
     const minRange = control.querySelector('input[type="range"][id$="-min-range"]');
     const maxRange = control.querySelector('input[type="range"][id$="-max-range"]');
     const minInput = control.querySelector('input[type="number"][id$="-min"]');
@@ -465,13 +503,13 @@ function resetDualRangeFilters() {
     const values = control.querySelector('.dual-range-values');
     if (!minRange || !maxRange || !minInput || !maxInput || !fill || !values) return;
 
-    minRange.value = '0';
+    minRange.value = String(min);
     maxRange.value = String(max);
-    minInput.value = '0';
+    minInput.value = String(min);
     maxInput.value = String(max);
     fill.style.left = '0%';
     fill.style.width = '100%';
-    values.textContent = `0 - ${max}`;
+    values.textContent = `${min} - ${max}`;
   });
 }
 
@@ -963,6 +1001,37 @@ function buildMovesLookup(rows) {
   }, {});
 }
 
+function buildMoveLearnersLookup(pokemonList) {
+  const categories = ['levelUp', 'tm', 'egg', 'evolution', 'reminder'];
+  const lookup = {};
+
+  pokemonList.forEach((pokemon) => {
+    categories.forEach((category) => {
+      String(pokemon.moves?.[category] || '')
+        .split('|')
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+        .forEach((entry) => {
+          const separator = entry.indexOf('-');
+          if (separator <= 0) return;
+          const moveId = entry.slice(0, separator).trim();
+          const learnedAs = entry.slice(separator + 1).trim();
+          if (!/^\d+$/.test(moveId)) return;
+          if (!lookup[moveId]) lookup[moveId] = Object.fromEntries(categories.map((key) => [key, []]));
+          lookup[moveId][category].push({ pokemon, learnedAs });
+        });
+    });
+  });
+
+  Object.values(lookup).forEach((groups) => {
+    Object.values(groups).forEach((learners) => {
+      learners.sort((left, right) => Number(left.pokemon.number) - Number(right.pokemon.number)
+        || left.pokemon.name.localeCompare(right.pokemon.name));
+    });
+  });
+  return lookup;
+}
+
 function renderMoveFilters() {
   const types = [...new Set(allMoves.map((move) => move.type).filter(Boolean))].sort();
   elements.moveTypeButtons.innerHTML = ['any', ...types].map((type) => {
@@ -976,11 +1045,21 @@ function renderMoveFilters() {
   elements.moveCategoryButtons.innerHTML = [
     ['any', 'Any'], ['Physical', 'Physical'], ['Special', 'Special'], ['Status', 'Status']
   ].map(([category, label]) => `<button type="button" class="generation-button${category === selectedMoveCategoryFilter ? ' active' : ''}" data-move-category="${category}" aria-pressed="${category === selectedMoveCategoryFilter}">${label}</button>`).join('');
-  const targets = [...new Set(allMoves.map((move) => move.target).filter(Boolean))].sort();
-  elements.moveTargetButtons.innerHTML = ['any', ...targets].map((target) => {
-    const label = target === 'any' ? 'Any target' : target;
-    return `<button type="button" class="generation-button${target === selectedMoveTarget ? ' active' : ''}" data-move-target="${escapeHtml(target)}" aria-pressed="${target === selectedMoveTarget}">${escapeHtml(label)}</button>`;
-  }).join('');
+  const availableTargets = new Set(allMoves.map((move) => move.target).filter(Boolean));
+  const targetRows = [
+    [['any', 'Any target']],
+    [['All', 'All'], ['All Allies', 'All Allies'], ['All Foes', 'All Foes']],
+    [['All Adjacent', 'All Adjacent'], ['All Adjacent Foes', 'All Adjacent Foes']],
+    [['Any', 'Any'], ['Selected', 'Selected']],
+    [['Adjacent Ally', 'Adjacent Ally'], ['Adjacent Foe', 'Adjacent Foe']],
+    [['Self', 'Self'], ['Ally or Self', 'Ally or Self']],
+    [['Previous Opponent', 'Previous Opponent']]
+  ];
+  elements.moveTargetButtons.innerHTML = targetRows
+    .map((row) => row.filter(([target]) => target === 'any' || availableTargets.has(target)))
+    .filter((row) => row.length)
+    .map((row) => `<div class="move-target-filter-row columns-${row.length}">${row.map(([target, label]) => `<button type="button" class="generation-button${target === selectedMoveTarget ? ' active' : ''}" data-move-target="${escapeHtml(target)}" aria-pressed="${target === selectedMoveTarget}">${escapeHtml(label)}</button>`).join('')}</div>`)
+    .join('');
   const maximum = (getValue, fallback = 1) => Math.max(fallback, ...allMoves.map((move) => parseMoveFilterNumber(getValue(move)) || 0));
   const priorities = allMoves.map((move) => parseMoveFilterNumber(move.priority)).filter(Number.isFinite);
   const minimumPriority = Math.min(0, ...priorities);
@@ -1109,6 +1188,7 @@ function renderMoveList() {
 
 function selectMove(move) {
   selectedMove = move;
+  selectedMoveLearnerCategory = 'levelUp';
   renderMoveList();
   renderMoveDetails(move);
 }
@@ -1145,11 +1225,23 @@ function renderMoveDetails(move) {
       ${renderMoveTarget(move.target)}
       ${renderMovePokedexSection(move)}
       ${effects.length ? `<section class="move-effects-section"><h2>Battle Effects</h2>${effects.map(([label, value]) => `<p><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</p>`).join('')}</section>` : ''}
+      ${renderMoveLearnersSection(move)}
     </article>`;
 
   elements.moveDetails.querySelectorAll('.move-pokedex-tab').forEach((button) => {
     button.addEventListener('click', () => {
       selectedMoveGen = button.dataset.gameset || Number(button.dataset.generation);
+      renderMoveDetails(move);
+    });
+  });
+
+  elements.moveDetails.querySelectorAll('.pokemon-navigation-link').forEach((button) => {
+    button.addEventListener('click', () => navigateToPokemon(button.dataset.pokemonNumber, button.dataset.pokemonName));
+  });
+
+  elements.moveDetails.querySelectorAll('.move-learners-tab').forEach((button) => {
+    button.addEventListener('click', () => {
+      selectedMoveLearnerCategory = button.dataset.category || 'levelUp';
       renderMoveDetails(move);
     });
   });
@@ -1199,32 +1291,107 @@ function renderMovePokedexSection(move) {
 
 function renderMoveTarget(targetValue) {
   const target = String(targetValue || '').trim();
+  const targetKey = target.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
   const targetMap = {
-    Self: ['you'],
-    'Self/Ally': ['ally-left', 'you', 'ally-right'],
-    'Adjacent Ally': ['ally-left', 'ally-right'],
-    Selected: ['foe-center'],
-    Opponent: ['foe-center'],
-    Adjacent: ['foe-left', 'foe-center', 'foe-right', 'ally-left', 'ally-right'],
-    'Adjacent Foes': ['foe-left', 'foe-center', 'foe-right'],
-    'All Foes': ['foe-left', 'foe-center', 'foe-right'],
-    'All Allies': ['ally-left', 'you', 'ally-right'],
-    'All Adjacent': ['foe-left', 'foe-center', 'foe-right', 'ally-left', 'ally-right'],
-    All: ['foe-left', 'foe-center', 'foe-right', 'ally-left', 'you', 'ally-right']
+    'adjacent ally': [5],
+    'adjacent foes': [1, 2],
+    'adjacent foe': [1, 2],
+    all: [1, 2, 3, 4, 5, 6],
+    'all adjacent': [1, 2, 5],
+    'all adjacent foes': [1, 2],
+    'all adjacent foes only': [1, 2],
+    'all allies': [4, 5, 6],
+    'ally or self': [4, 5, 6],
+    'self ally': [4, 5, 6],
+    'self or ally': [4, 5, 6],
+    'self ally target': [4, 5, 6],
+    'all foes': [1, 2, 3],
+    'all enemies': [1, 2, 3],
+    'previous opponent': [2],
+    selected: [1, 2, 5],
+    self: [4],
+    any: [1, 2, 3, 5, 6],
+    adjacent: [1, 2, 5],
+    opponent: [1]
   };
-  const highlighted = targetMap[target] || [];
-  const slots = [
-    { id: 'foe-left', label: 'Foe', side: 'foe' }, { id: 'foe-center', label: 'Foe', side: 'foe' }, { id: 'foe-right', label: 'Foe', side: 'foe' },
-    { id: 'ally-left', label: 'Ally', side: 'ally' }, { id: 'you', label: 'You', side: 'ally' }, { id: 'ally-right', label: 'Ally', side: 'ally' }
+  const highlighted = targetMap[targetKey] || [];
+  const positions = [
+    { number: 1, label: 'Opponent', side: 'foe' },
+    { number: 2, label: 'Opponent', side: 'foe' },
+    { number: 3, label: 'Opponent', side: 'foe' },
+    { number: 4, label: 'You', side: 'ally' },
+    { number: 5, label: 'Ally', side: 'ally' },
+    { number: 6, label: 'Ally', side: 'ally' }
   ];
-  const renderSlot = (slot) => `<div class="target-slot target-${slot.side}${highlighted.includes(slot.id) ? ' is-targeted' : ''}"><span class="target-piece" aria-hidden="true"></span><span>${slot.label}</span></div>`;
+  const adjacentPairs = [[1, 2], [2, 3], [4, 5], [5, 6], [1, 4], [2, 5], [3, 6]];
+  const slotCenters = {
+    1: [50, 38], 2: [150, 38], 3: [250, 38],
+    4: [50, 122], 5: [150, 122], 6: [250, 122]
+  };
+  const connections = targetKey.includes('all')
+    ? adjacentPairs
+      .filter(([from, to]) => highlighted.includes(from) && highlighted.includes(to))
+      .map(([from, to]) => {
+        const [x1, y1] = slotCenters[from];
+        const [x2, y2] = slotCenters[to];
+        return `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" />`;
+      }).join('')
+    : '';
+  const renderSlot = (position) => `<div class="target-slot target-${position.side}${highlighted.includes(position.number) ? ' is-targeted' : ''}" data-position="${position.number}"><span class="target-piece" aria-hidden="true"></span><span>${position.label}</span></div>`;
   return `
     <section class="move-target-section" aria-label="Move target: ${escapeHtml(target || 'Unknown')}">
       <div class="section-header"><h2>Target</h2><span class="small">${escapeHtml(target || 'Unknown')}</span></div>
       <div class="target-board" role="img" aria-label="Highlighted positions are affected by this move">
-        <div class="target-team"><span class="target-team-label">Opponents</span><div class="target-slots">${slots.slice(0, 3).map(renderSlot).join('')}</div></div>
-        <div class="target-board-divider" aria-hidden="true"></div>
-        <div class="target-team"><span class="target-team-label">Your side</span><div class="target-slots">${slots.slice(3).map(renderSlot).join('')}</div></div>
+        <svg class="target-connections" viewBox="0 0 300 160" preserveAspectRatio="none" aria-hidden="true">${connections}</svg>
+        <div class="target-slots">${positions.map(renderSlot).join('')}</div>
+      </div>
+    </section>`;
+}
+
+function formatMoveLearningMethod(category, learnedAs) {
+  const method = String(learnedAs || '').trim();
+  if (category === 'levelUp') return `Level ${method || '—'}`;
+  if (category === 'tm') return /HM/i.test(method) ? 'HM' : 'TM';
+  if (category === 'egg') return /EM/i.test(method) ? 'Egg Move' : method || 'Egg Move';
+  if (category === 'evolution') return /EV/i.test(method) ? 'Evolution' : method || 'Evolution';
+  if (category === 'reminder') return /R/i.test(method) ? 'Reminder' : method || 'Reminder';
+  return method || '—';
+}
+
+function renderMoveLearnersSection(move) {
+  const groups = [
+    { key: 'levelUp', label: 'Level-Up' },
+    { key: 'tm', label: 'TM / HM' },
+    { key: 'egg', label: 'Egg' },
+    { key: 'evolution', label: 'Evolution' },
+    { key: 'reminder', label: 'Reminder' }
+  ];
+  const learnersByCategory = moveLearnersLookup[move.id] || {};
+  const activeCategory = groups.find((group) => group.key === selectedMoveLearnerCategory) || groups[0];
+  const learners = learnersByCategory[activeCategory.key] || [];
+  const rows = learners.length
+    ? learners.map(({ pokemon, learnedAs }) => `
+        <tr>
+          <td>#${escapeHtml(pokemon.number)}</td>
+          <td><button type="button" class="dex-navigation-link pokemon-navigation-link" data-pokemon-number="${escapeHtml(pokemon.number)}" data-pokemon-name="${escapeHtml(pokemon.name)}">${escapeHtml(pokemon.name)}</button></td>
+          <td><div class="move-learner-types">${pokemon.types.filter(Boolean).map(renderMoveTypePill).join('') || '—'}</div></td>
+          <td>${escapeHtml(formatMoveLearningMethod(activeCategory.key, learnedAs))}</td>
+        </tr>`).join('')
+    : '<tr><td colspan="4" class="moveset-empty">No Pokémon learn this move in this category.</td></tr>';
+  const tabs = groups.map((group) => {
+    const count = (learnersByCategory[group.key] || []).length;
+    return `<button type="button" class="moveset-tab move-learners-tab${activeCategory.key === group.key ? ' active' : ''}${count ? '' : ' disabled'}" data-category="${group.key}">${group.label}</button>`;
+  }).join('');
+
+  return `
+    <section class="moveset-card stats-card move-learners-card">
+      <div class="section-header"><h2>Pokémon That Learn This Move</h2></div>
+      <div class="moveset-tabs">${tabs}</div>
+      <div class="moveset-table-wrap">
+        <table class="moveset-table move-learners-table">
+          <thead><tr><th>Dex #</th><th>Pokémon</th><th>Type</th><th>Learned Via</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
       </div>
     </section>`;
 }
@@ -1747,6 +1914,7 @@ function bindDualRangeFilters() {
     const maxInput = control.querySelector(`#${prefix}-max`);
     const fill = control.querySelector('.dual-range-fill');
     const values = control.querySelector('.dual-range-values');
+    const track = control.querySelector('.dual-range-track');
     if (!minRange || !maxRange || !minInput || !maxInput || !fill || !values) return;
     const filterAction = control.closest('#movedexView') ? applyMoveFilters : applyFilter;
 
@@ -1790,6 +1958,52 @@ function bindDualRangeFilters() {
       update('max');
       filterAction();
     });
+
+    if (track) {
+      track.addEventListener('pointerdown', (event) => {
+        if (Number(minRange.value) !== Number(maxRange.value)) return;
+        const startX = event.clientX;
+        let activeRange = null;
+        event.preventDefault();
+        event.stopPropagation();
+        track.setPointerCapture(event.pointerId);
+
+        const handlePointerMove = (moveEvent) => {
+          if (moveEvent.pointerId !== event.pointerId) return;
+          const direction = moveEvent.clientX - startX;
+          if (!direction) return;
+          activeRange = direction > 0 ? maxRange : minRange;
+          const bounds = track.getBoundingClientRect();
+          const usableWidth = Math.max(1, bounds.width - 16);
+          const position = Math.max(0, Math.min(1, (moveEvent.clientX - bounds.left - 8) / usableWidth));
+          const range = max - min || 1;
+          const step = Number(activeRange.step) || 1;
+          const rawValue = min + position * range;
+          const nextValue = min + Math.round((rawValue - min) / step) * step;
+          const roundedValue = Number(nextValue.toFixed(String(step).split('.')[1]?.length || 0));
+
+          if (activeRange === maxRange) {
+            maxRange.value = String(Math.max(roundedValue, Number(minRange.value)));
+          } else {
+            minRange.value = String(Math.min(roundedValue, Number(maxRange.value)));
+          }
+          activeRange.dispatchEvent(new Event('input', { bubbles: true }));
+        };
+
+        const finishPointerMove = (upEvent) => {
+          if (upEvent.pointerId !== event.pointerId) return;
+          track.removeEventListener('pointermove', handlePointerMove);
+          track.removeEventListener('pointerup', finishPointerMove);
+          track.removeEventListener('pointercancel', finishPointerMove);
+          if (track.hasPointerCapture(event.pointerId)) track.releasePointerCapture(event.pointerId);
+        };
+
+        track.addEventListener('pointermove', handlePointerMove);
+        track.addEventListener('pointerup', finishPointerMove);
+        track.addEventListener('pointercancel', finishPointerMove);
+      });
+    }
+
     update();
     control.dataset.bound = '1';
   });
@@ -2170,6 +2384,13 @@ function renderDetails(pokemon) {
     button.addEventListener('click', () => {
       selectedMoveCategory = button.dataset.category || 'levelUp';
       renderDetails(pokemon);
+    });
+  });
+
+  elements.details.querySelectorAll('.move-navigation-link').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation();
+      navigateToMove(button.dataset.moveId);
     });
   });
 
@@ -2584,7 +2805,7 @@ function renderMovesetSection(pokemon) {
           return `
             <tr>
               <td>${escapeHtml(levelValue || '-')}</td>
-              <td class="move-name" data-move-id="${escapeHtml(moveId)}">${moveName}</td>
+              <td class="move-name" data-move-id="${escapeHtml(moveId)}"><button type="button" class="dex-navigation-link move-navigation-link" data-move-id="${escapeHtml(moveId)}">${moveName}</button></td>
               <td>${moveType}</td>
               <td>${moveCategory}</td>
               <td>${movePP}</td>
@@ -2629,8 +2850,8 @@ function renderMovesetSection(pokemon) {
               <th>Priority</th>
               <th>Target</th>
             </tr>
-          </thead>
-          <tbody>${rowsHtml}</tbody>
+            </thead>
+            <tbody>${rowsHtml}</tbody>
         </table>
       </div>
     </section>

@@ -97,11 +97,43 @@ button, input {
   color: var(--text-muted);
   cursor: pointer;
   font-weight: 700;
+  transition: background-color 0.22s ease, color 0.22s ease, transform 0.22s ease, box-shadow 0.22s ease;
 }
 
 .dex-tab.active {
   background: var(--accent);
   color: #06131c;
+  box-shadow: 0 5px 16px rgba(34, 211, 238, 0.2);
+  transform: scale(1.04);
+}
+
+.dex-tab:active {
+  transform: scale(0.97);
+}
+
+.layout.dex-view-enter {
+  animation: dexViewEnter 0.32s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+}
+
+@keyframes dexViewEnter {
+  from {
+    opacity: 0;
+    transform: translateY(0.65rem);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dex-tab {
+    transition: none;
+  }
+
+  .layout.dex-view-enter {
+    animation: none;
+  }
 }
 
 .layout[hidden] {
@@ -789,6 +821,29 @@ button, input {
   margin-top: 0.4rem;
 }
 
+.move-target-filter-buttons {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0.55rem;
+}
+
+.move-target-filter-row {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.move-target-filter-row.columns-1 {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.move-target-filter-row.columns-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.move-target-filter-row.columns-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .generation-button {
   display: inline-flex;
   align-items: center;
@@ -1381,27 +1436,40 @@ button, input {
 }
 
 .target-board {
-  display: grid;
-  gap: 0.7rem;
+  position: relative;
+  isolation: isolate;
+  min-height: 12rem;
   padding: 0.9rem;
   border: 1px solid rgba(148, 163, 184, 0.14);
   border-radius: 14px;
   background: rgba(8, 15, 24, 0.62);
 }
 
-.target-team-label {
-  display: block;
-  margin-bottom: 0.45rem;
-  color: var(--text-muted);
-  font-size: 0.75rem;
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
 .target-slots {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(4.5rem, 1fr));
   gap: 0.5rem;
+  position: relative;
+  z-index: 1;
+  min-height: 10rem;
+}
+
+.target-connections {
+  position: absolute;
+  inset: 0.9rem;
+  width: calc(100% - 1.8rem);
+  height: calc(100% - 1.8rem);
+  overflow: visible;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.target-connections line {
+  stroke: rgba(103, 232, 249, 0.72);
+  stroke-width: 3;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
 }
 
 .target-slot {
@@ -1410,6 +1478,7 @@ button, input {
   gap: 0.35rem;
   min-width: 0;
   padding: 0.55rem 0.25rem;
+  background: rgba(9, 17, 27, 0.99);
   border: 1px solid rgba(148, 163, 184, 0.14);
   border-radius: 10px;
   color: var(--text-muted);
@@ -1440,12 +1509,12 @@ button, input {
 
 .target-foe.is-targeted {
   border-color: rgba(248, 113, 113, 0.66);
-  background: rgba(220, 66, 66, 0.2);
+  background: rgba(57, 24, 29, 0.99);
 }
 
 .target-ally.is-targeted {
   border-color: rgba(74, 222, 128, 0.58);
-  background: rgba(22, 163, 74, 0.2);
+  background: rgba(18, 52, 36, 0.99);
 }
 
 .target-slot.is-targeted .target-piece {
@@ -1453,10 +1522,6 @@ button, input {
   box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.08);
 }
 
-.target-board-divider {
-  height: 1px;
-  background: rgba(148, 163, 184, 0.18);
-}
 
 .move-stat-grid {
   display: grid;
@@ -2415,6 +2480,48 @@ button, input {
 
 .moveset-table tbody tr:hover {
   background: rgba(56, 189, 248, 0.08);
+}
+
+.dex-navigation-link {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent-strong);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.dex-navigation-link:hover,
+.dex-navigation-link:focus-visible {
+  color: var(--text);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.move-learners-table {
+  min-width: 620px;
+}
+
+.move-learners-table th:nth-child(1),
+.move-learners-table td:nth-child(1) { width: 14%; }
+.move-learners-table th:nth-child(2),
+.move-learners-table td:nth-child(2) { width: 28%; }
+.move-learners-table th:nth-child(3),
+.move-learners-table td:nth-child(3) { width: 34%; }
+.move-learners-table th:nth-child(4),
+.move-learners-table td:nth-child(4) { width: 24%; }
+
+.move-learner-types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.move-learner-types .move-type-pill {
+  min-height: 1.5rem;
+  padding: 0.2rem 0.55rem;
+  font-size: 0.72rem;
 }
 
 .move-badge {
