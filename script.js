@@ -157,7 +157,10 @@ async function initialize() {
     moveDescriptionGamesets = moveDescriptionRows.length ? getMoveDescriptionGamesets(moveDescriptionRows) : [];
     abilityDescriptionsLookup = buildAbilityDescriptionsLookup(abilityRows);
     allPokemon.forEach((pokemon) => {
-      pokemon.pokedexEntries = pokedexLookup[pokemon.formKey] || pokedexLookup[normalizePokemonName(pokemon.name)] || [];
+      const formKey = buildPokedexLookupKey(pokemon.number, pokemon.mainDex, pokemon.name);
+      const pokedexData = pokedexLookup[formKey] || pokedexLookup[normalizePokemonName(pokemon.name)];
+      pokemon.pokedexEntries = pokedexData?.entries || [];
+      pokemon.displayName = pokedexData?.displayName || pokemon.name;
     });
     groupsByDex = buildGroups(allPokemon);
     processGroups(groupsByDex);
@@ -655,12 +658,18 @@ function buildAbilityDescriptionsLookup(rows) {
 }
 
 function buildPokedexLookup(rows) {
-  const headerIndex = rows.findIndex((row) => row[0] === 'Dex #' && row[1] === 'Main Dex' && row[2] === 'Pokemon');
+  const headerIndex = rows.findIndex((row) => (
+    String(row[0] || '').trim() === 'Dex #'
+    && String(row[1] || '').trim() === 'Main Dex'
+    && String(row[2] || '').trim() === 'Display Name'
+    && String(row[3] || '').trim() === 'Pokemon'
+  ));
   if (headerIndex === -1) return {};
   return rows.slice(headerIndex + 1).reduce((lookup, row) => {
     const dexNumber = String(row[0] || '').trim();
     const mainDex = String(row[1] || '').trim();
-    const pokemonName = String(row[2] || '').trim();
+    const displayName = String(row[2] || '').trim();
+    const pokemonName = String(row[3] || '').trim();
     if (!dexNumber || !pokemonName) return lookup;
 
     const entries = POKEDEX_ENTRY_COLUMNS.reduce((acc, column) => {
@@ -671,13 +680,12 @@ function buildPokedexLookup(rows) {
       return acc;
     }, []);
 
-    if (entries.length) {
-      const formKey = buildPokedexLookupKey(dexNumber, mainDex, pokemonName);
-      const nameKey = normalizePokemonName(pokemonName);
-      lookup[formKey] = entries;
-      if (!lookup[nameKey]) {
-        lookup[nameKey] = entries;
-      }
+    const formKey = buildPokedexLookupKey(dexNumber, mainDex, pokemonName);
+    const nameKey = normalizePokemonName(pokemonName);
+    const pokedexData = { entries, displayName };
+    lookup[formKey] = pokedexData;
+    if (!lookup[nameKey]) {
+      lookup[nameKey] = pokedexData;
     }
     return lookup;
   }, {});
@@ -797,45 +805,45 @@ const POKEDEX_GAME_COLUMNS = [
 /* UPDATE THIS IF POKEDEX SHEET CHANGES (GEN SHEETS */
 
 const POKEDEX_ENTRY_COLUMNS = [
-  { index: 3, game: 'Red', generation: 1 },
-  { index: 4, game: 'Green', generation: 1 },
-  { index: 5, game: 'Blue', generation: 1 },
-  { index: 6, game: 'Yellow', generation: 1 },
-  { index: 7, game: 'Gold', generation: 2 },
-  { index: 8, game: 'Silver', generation: 2 },
-  { index: 9, game: 'Crystal', generation: 2 },
-  { index: 10, game: 'Ruby', generation: 3 },
-  { index: 11, game: 'Sapphire', generation: 3 },
-  { index: 12, game: 'Emerald', generation: 3 },
-  { index: 13, game: 'FireRed', generation: 3 },
-  { index: 14, game: 'LeafGreen', generation: 3 },
-  { index: 15, game: 'Diamond', generation: 4 },
-  { index: 16, game: 'Pearl', generation: 4 },
-  { index: 17, game: 'Platinum', generation: 4 },
-  { index: 18, game: 'HeartGold', generation: 4 },
-  { index: 19, game: 'SoulSilver', generation: 4 },
-  { index: 20, game: 'Black', generation: 5 },
-  { index: 21, game: 'White', generation: 5 },
-  { index: 22, game: 'Black 2', generation: 5 },
-  { index: 23, game: 'White 2', generation: 5 },
-  { index: 24, game: 'X', generation: 6 },
-  { index: 25, game: 'Y', generation: 6 },
-  { index: 26, game: 'Omega Ruby', generation: 6 },
-  { index: 27, game: 'Alpha Sapphire', generation: 6 },
-  { index: 28, game: 'Sun', generation: 7 },
-  { index: 29, game: 'Moon', generation: 7 },
-  { index: 30, game: 'Ultra Sun', generation: 7 },
-  { index: 31, game: 'Ultra Moon', generation: 7 },
-  { index: 32, game: 'Let\'s Go Pikachu', generation: 7 },
-  { index: 33, game: 'Let\'s Go Eevee', generation: 7 },
-  { index: 34, game: 'Sword', generation: 8 },
-  { index: 35, game: 'Shield', generation: 8 },
-  { index: 36, game: 'Brilliant Diamond', generation: 8 },
-  { index: 37, game: 'Shining Pearl', generation: 8 },
-  { index: 38, game: 'Pokemon Legends: Arceus', generation: 8 },
-  { index: 39, game: 'Scarlet', generation: 9 },
-  { index: 40, game: 'Violet', generation: 9 },
-  { index: 41, game: 'Legends: ZA', generation: 9 }
+  { index: 4, game: 'Red', generation: 1 },
+  { index: 5, game: 'Green', generation: 1 },
+  { index: 6, game: 'Blue', generation: 1 },
+  { index: 7, game: 'Yellow', generation: 1 },
+  { index: 8, game: 'Gold', generation: 2 },
+  { index: 9, game: 'Silver', generation: 2 },
+  { index: 10, game: 'Crystal', generation: 2 },
+  { index: 11, game: 'Ruby', generation: 3 },
+  { index: 12, game: 'Sapphire', generation: 3 },
+  { index: 13, game: 'Emerald', generation: 3 },
+  { index: 14, game: 'FireRed', generation: 3 },
+  { index: 15, game: 'LeafGreen', generation: 3 },
+  { index: 16, game: 'Diamond', generation: 4 },
+  { index: 17, game: 'Pearl', generation: 4 },
+  { index: 18, game: 'Platinum', generation: 4 },
+  { index: 19, game: 'HeartGold', generation: 4 },
+  { index: 20, game: 'SoulSilver', generation: 4 },
+  { index: 21, game: 'Black', generation: 5 },
+  { index: 22, game: 'White', generation: 5 },
+  { index: 23, game: 'Black 2', generation: 5 },
+  { index: 24, game: 'White 2', generation: 5 },
+  { index: 25, game: 'X', generation: 6 },
+  { index: 26, game: 'Y', generation: 6 },
+  { index: 27, game: 'Omega Ruby', generation: 6 },
+  { index: 28, game: 'Alpha Sapphire', generation: 6 },
+  { index: 29, game: 'Sun', generation: 7 },
+  { index: 30, game: 'Moon', generation: 7 },
+  { index: 31, game: 'Ultra Sun', generation: 7 },
+  { index: 32, game: 'Ultra Moon', generation: 7 },
+  { index: 33, game: 'Let\'s Go Pikachu', generation: 7 },
+  { index: 34, game: 'Let\'s Go Eevee', generation: 7 },
+  { index: 35, game: 'Sword', generation: 8 },
+  { index: 36, game: 'Shield', generation: 8 },
+  { index: 37, game: 'Brilliant Diamond', generation: 8 },
+  { index: 38, game: 'Shining Pearl', generation: 8 },
+  { index: 39, game: 'Pokemon Legends: Arceus', generation: 8 },
+  { index: 40, game: 'Scarlet', generation: 9 },
+  { index: 41, game: 'Violet', generation: 9 },
+  { index: 42, game: 'Legends: ZA', generation: 9 }
 ];
 
 const DLC_GAME_NAMES = new Set([
@@ -2076,7 +2084,10 @@ function applyFilter() {
     const groupForms = pokemon.groupForms || [pokemon];
 
     // search query match
-    const nameMatch = groupForms.some((form) => form.name.toLowerCase().includes(query));
+    const nameMatch = groupForms.some((form) => (
+      String(form.displayName || '').toLowerCase().includes(query)
+      || form.name.toLowerCase().includes(query)
+    ));
     const numberMatch = String(pokemon.number || '').toLowerCase().includes(query);
     const typeMatch = groupForms.some((form) => form.types.some((type) => (type || '').toLowerCase().includes(query)));
     if (!(nameMatch || numberMatch || typeMatch || !query)) return false;
@@ -2184,7 +2195,7 @@ function renderList(pokemonList) {
     card.type = 'button';
     card.className = 'pokemon-card';
     const isFavorite = Boolean(getCurrentProfile()?.favorites?.includes(getPokemonKey(pokemon)));
-    card.innerHTML = `<h3>${pokemon.name}${isFavorite ? ' <span class="favorite-star" aria-label="Favorite">★</span>' : ''}</h3><p>#${pokemon.number} • ${pokemon.types.filter(Boolean).join(' / ')}</p>`;
+    card.innerHTML = `<h3>${pokemon.displayName || pokemon.name}${isFavorite ? ' <span class="favorite-star" aria-label="Favorite">★</span>' : ''}</h3><p>#${pokemon.number} • ${pokemon.types.filter(Boolean).join(' / ')}</p>`;
     card.addEventListener('click', () => selectPokemon(pokemon));
     if (selectedPokemon && selectedPokemon.group === pokemon.group) {
       card.classList.add('active');

@@ -2314,6 +2314,8 @@ button, input {
   overflow-x: auto;
   overscroll-behavior-x: contain;
   scrollbar-width: thin;
+  padding: 0.25rem 0.15rem;
+  margin: 0.75rem -0.15rem;
 }
 
 .move-pokedex-section .pokedex-tab {
@@ -2321,6 +2323,11 @@ button, input {
   min-width: 3.6rem;
   padding-inline: 0.65rem;
   white-space: nowrap;
+}
+
+.move-pokedex-section .pokedex-tab:hover,
+.move-pokedex-section .pokedex-tab.active {
+  transform: scale(1.035);
 }
 
 .pokedex-grid {
