@@ -1174,12 +1174,18 @@ button, input {
 
 .form-switcher {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 0.55rem;
   margin-bottom: 1rem;
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  padding-bottom: 0.25rem;
 }
 
 .form-select {
+  flex: 0 0 auto;
   border: 1px solid rgba(148, 163, 184, 0.14);
   background: rgba(15, 23, 32, 0.94);
   color: var(--text);
@@ -1187,6 +1193,7 @@ button, input {
   border-radius: 999px;
   cursor: pointer;
   transition: transform 0.15s ease, background-color 0.2s ease, border-color 0.2s ease;
+  white-space: nowrap;
 }
 
 .form-select.active,
@@ -1426,9 +1433,22 @@ button, input {
   font-size: clamp(1.5rem, 2vw, 2.2rem);
 }
 
+.move-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 1rem;
+}
+
 .move-target-section {
   padding-top: 1rem;
   border-top: 1px solid rgba(148, 163, 184, 0.14);
+}
+
+.move-overview-grid .move-target-section {
+  min-width: 0;
+  padding-top: 0;
+  border-top: 0;
 }
 
 .move-target-section .section-header {
@@ -1525,7 +1545,8 @@ button, input {
 
 .move-stat-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-content: start;
   gap: 0.65rem;
 }
 
@@ -1705,7 +1726,6 @@ button, input {
 .type-pill,
 .status-chip,
 .game-pill,
-.form-select,
 .value-pill,
 .meta-item,
 .ability-box {
@@ -1714,6 +1734,14 @@ button, input {
   overflow-wrap: anywhere;
   word-break: break-word;
   max-width: 100%;
+}
+
+.form-switcher .form-select {
+  flex: 0 0 auto;
+  max-width: none;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 .detail-header {
@@ -2590,6 +2618,10 @@ button, input {
 
   .move-stat-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .move-overview-grid {
+    grid-template-columns: 1fr;
   }
 
   .layout {

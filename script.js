@@ -6,6 +6,8 @@ const ABILITY_SHEET_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT91A
 const MOVES_SHEET_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTwDxqxofxdx7M2HU-pMFBFBcMDI6mIVBeVim1sxIC_zalARL4Z7DVNiPkhGwY4ZKmVpC9FETrjZtOH/pub?gid=1813387196&single=true&output=csv';
 const MOVES_SHEET_HTML = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTwDxqxofxdx7M2HU-pMFBFBcMDI6mIVBeVim1sxIC_zalARL4Z7DVNiPkhGwY4ZKmVpC9FETrjZtOH/pubhtml/sheet?headers=false&gid=1813387196';
 const MOVE_DESCRIPTIONS_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT91AhjLXEf0LGvk-ck5jcQJOzEHIaBajUKI92zfHkrg1I4SrTnABPLXyveLTNRKegrImW49xxmY8L3/pub?gid=2098324621&single=true&output=csv';
+const SHEET_CACHE_DB_NAME = 'interactive-pokedex-cache';
+const SHEET_CACHE_STORE_NAME = 'sheets';
 
 const TYPE_COLORS = {
   Normal: '#A8A77A',
@@ -113,6 +115,8 @@ let selectedMove = null;
 let selectedMoveTypes = new Set();
 let selectedMoveCategoryFilter = 'any';
 let selectedMoveTarget = 'any';
+let moveFavoriteFilter = 'any';
+let moveNoteFilter = 'any';
 let selectedMoveGen = 9;
 let selectedMoveLearnerCategory = 'levelUp';
 let abilityDescriptionsLookup = {};
@@ -122,6 +126,7 @@ let currentUsername = localStorage.getItem('pokedexCurrentUser') || '';
 let authMode = 'login';
 let customFavoriteFilter = 'any';
 let customNoteFilter = 'any';
+let sheetCacheDatabasePromise;
 const PROFILE_STORAGE_KEY = 'pokedexLocalProfiles';
 const GEN_RANGES = {
   1: [1, 151],
@@ -144,18 +149,15 @@ async function initialize() {
   bindSidebarToggle();
   bindFloatingActions();
   elements.status.textContent = 'Loading sheet data from Google...';
+  let pokemonDataLoaded = false;
   try {
-    const [rawRows, pokedexRows, movesRows, abilityRows, moveDescriptionRows] = await Promise.all([
-      loadData(), loadPokedexData(), loadMovesData(), loadAbilityData(), loadMoveDescriptionsData()
+    const [rawRows, pokedexRows] = await Promise.all([
+      loadCachedSheetRows('pokemon', loadData),
+      loadCachedSheetRows('pokedex', loadPokedexData)
     ]);
     allPokemon = buildPokemon(rawRows);
     const pokedexLookup = buildPokedexLookup(pokedexRows);
-    movesLookup = buildMovesLookup(movesRows);
-    allMoves = Object.values(movesLookup).filter((move) => move.name).sort((a, b) => a.name.localeCompare(b.name));
     moveLearnersLookup = buildMoveLearnersLookup(allPokemon);
-    moveDescriptionsLookup = buildMoveDescriptionsLookup(moveDescriptionRows);
-    moveDescriptionGamesets = moveDescriptionRows.length ? getMoveDescriptionGamesets(moveDescriptionRows) : [];
-    abilityDescriptionsLookup = buildAbilityDescriptionsLookup(abilityRows);
     allPokemon.forEach((pokemon) => {
       const formKey = buildPokedexLookupKey(pokemon.number, pokemon.mainDex, pokemon.name);
       const pokedexData = pokedexLookup[formKey] || pokedexLookup[normalizePokemonName(pokemon.name)];
@@ -168,12 +170,11 @@ async function initialize() {
     renderTypeFilters(allPokemon);
     renderAttributeFilters(allPokemon);
     renderList(filteredPokemon);
-    renderMoveFilters();
-    applyMoveFilters();
     if (filteredPokemon.length) {
       selectPokemon(filteredPokemon[0]);
     }
     elements.status.textContent = `Loaded ${allPokemon.length} Pokémon.`;
+    pokemonDataLoaded = true;
   } catch (error) {
     console.error(error);
     elements.status.textContent = 'Unable to load sheet data. Check network access or sheet visibility.';
@@ -213,11 +214,30 @@ async function initialize() {
     updateMoveFilterButtons();
     applyMoveFilters();
   });
+  document.querySelectorAll('#movePanel-custom .custom-filter-button').forEach((button) => {
+    button.addEventListener('click', () => {
+      const group = button.dataset.moveCustomGroup;
+      const selectedValue = button.dataset.moveCustomFilter || 'any';
+      const isDeselecting = selectedValue !== 'any' && button.classList.contains('active');
+      const value = isDeselecting ? 'any' : selectedValue;
+      if (group === 'favorites') moveFavoriteFilter = value;
+      if (group === 'notes') moveNoteFilter = value;
+      document.querySelectorAll(`#movePanel-custom .custom-filter-button[data-move-custom-group="${group}"]`).forEach((item) => {
+        item.classList.toggle('active', item.dataset.moveCustomFilter === value);
+      });
+      applyMoveFilters();
+    });
+  });
   document.getElementById('clearMoveFiltersButton')?.addEventListener('click', () => {
     elements.moveSearchInput.value = '';
     selectedMoveTypes.clear();
     selectedMoveCategoryFilter = 'any';
     selectedMoveTarget = 'any';
+    moveFavoriteFilter = 'any';
+    moveNoteFilter = 'any';
+    document.querySelectorAll('#movePanel-custom .custom-filter-button').forEach((button) => {
+      button.classList.toggle('active', button.dataset.moveCustomFilter === 'any');
+    });
     resetMoveRangeFilters();
     updateMoveFilterButtons();
     applyMoveFilters();
@@ -232,6 +252,7 @@ async function initialize() {
   if (clearFilters) {
     clearFilters.addEventListener('click', resetFilters);
   }
+  if (pokemonDataLoaded) loadSupportingData();
   elements.randomButton.addEventListener('click', () => {
     if (filteredPokemon.length === 0) return;
     const random = filteredPokemon[Math.floor(Math.random() * filteredPokemon.length)];
@@ -239,6 +260,26 @@ async function initialize() {
     scrollToSelected();
   });
 };
+
+async function loadSupportingData() {
+  try {
+    const [movesRows, abilityRows, moveDescriptionRows] = await Promise.all([
+      loadCachedSheetRows('moves', loadMovesData),
+      loadCachedSheetRows('abilities', loadAbilityData),
+      loadCachedSheetRows('move-descriptions', loadMoveDescriptionsData)
+    ]);
+    movesLookup = buildMovesLookup(movesRows);
+    allMoves = Object.values(movesLookup).filter((move) => move.name).sort((a, b) => a.name.localeCompare(b.name));
+    moveDescriptionsLookup = buildMoveDescriptionsLookup(moveDescriptionRows);
+    moveDescriptionGamesets = moveDescriptionRows.length ? getMoveDescriptionGamesets(moveDescriptionRows) : [];
+    abilityDescriptionsLookup = buildAbilityDescriptionsLookup(abilityRows);
+    renderMoveFilters();
+    applyMoveFilters();
+  } catch (error) {
+    console.error('Unable to load move data', error);
+    elements.status.textContent = `Loaded ${allPokemon.length} Pokémon, but move data could not be loaded.`;
+  }
+}
 
 function bindFloatingActions() {
   elements.floatingRandomButton?.addEventListener('click', () => elements.randomButton?.click());
@@ -363,7 +404,9 @@ function bindProfileControls() {
       localStorage.removeItem('pokedexCurrentUser');
       updateProfileButton();
       applyFilter();
+      applyMoveFilters();
       if (selectedPokemon) refreshPersonalTools(selectedPokemon);
+      if (selectedMove) refreshMovePersonalTools(selectedMove);
       return;
     }
     openAuthModal('login');
@@ -441,7 +484,9 @@ function handleAuthSubmit(event) {
   closeAuthModal();
   form.reset();
   applyFilter();
+  applyMoveFilters();
   if (selectedPokemon) refreshPersonalTools(selectedPokemon);
+  if (selectedMove) refreshMovePersonalTools(selectedMove);
 }
 
 function resetFilters() {
@@ -481,7 +526,7 @@ function resetFilters() {
 
   customFavoriteFilter = 'any';
   customNoteFilter = 'any';
-  document.querySelectorAll('.custom-filter-button').forEach((button) => {
+  document.querySelectorAll('#panel-custom .custom-filter-button').forEach((button) => {
     button.classList.toggle('active', button.dataset.customFilter === 'any');
   });
 
@@ -514,6 +559,68 @@ function resetDualRangeFilters() {
     fill.style.width = '100%';
     values.textContent = `${min} - ${max}`;
   });
+}
+
+function openSheetCache() {
+  if (!sheetCacheDatabasePromise) {
+    sheetCacheDatabasePromise = new Promise((resolve, reject) => {
+      const request = indexedDB.open(SHEET_CACHE_DB_NAME, 1);
+      request.onupgradeneeded = () => {
+        request.result.createObjectStore(SHEET_CACHE_STORE_NAME);
+      };
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+  }
+  return sheetCacheDatabasePromise;
+}
+
+async function readCachedSheetRows(key) {
+  try {
+    const database = await openSheetCache();
+    return await new Promise((resolve, reject) => {
+      const request = database
+        .transaction(SHEET_CACHE_STORE_NAME, 'readonly')
+        .objectStore(SHEET_CACHE_STORE_NAME)
+        .get(key);
+      request.onsuccess = () => resolve(Array.isArray(request.result) ? request.result : null);
+      request.onerror = () => reject(request.error);
+    });
+  } catch (error) {
+    console.warn(`Unable to read cached ${key} sheet data`, error);
+    return null;
+  }
+}
+
+async function writeCachedSheetRows(key, rows) {
+  try {
+    const database = await openSheetCache();
+    await new Promise((resolve, reject) => {
+      const transaction = database.transaction(SHEET_CACHE_STORE_NAME, 'readwrite');
+      transaction.objectStore(SHEET_CACHE_STORE_NAME).put(rows, key);
+      transaction.oncomplete = resolve;
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
+  } catch (error) {
+    console.warn(`Unable to save cached ${key} sheet data`, error);
+  }
+}
+
+async function loadCachedSheetRows(key, loader) {
+  const cachedRows = await readCachedSheetRows(key);
+  if (cachedRows) {
+    loader()
+      .then(async (rows) => {
+        if (rows.length) await writeCachedSheetRows(key, rows);
+      })
+      .catch((error) => console.warn(`Unable to refresh cached ${key} sheet data`, error));
+    return cachedRows;
+  }
+
+  const rows = await loader();
+  if (rows.length) await writeCachedSheetRows(key, rows);
+  return rows;
 }
 
 async function loadData() {
@@ -1094,6 +1201,7 @@ function bindMoveFilterTabs() {
       document.querySelectorAll('#moveFilterPanels .filter-panel').forEach((panel) => {
         panel.style.display = panel.id === `movePanel-${button.dataset.movePanel}` ? '' : 'none';
       });
+      applyMoveFilters();
     });
   });
 }
@@ -1149,6 +1257,7 @@ function resetMoveRangeFilters() {
 
 function applyMoveFilters() {
   const query = String(elements.moveSearchInput?.value || '').trim().toLowerCase();
+  const profile = getCurrentProfile();
   const ppRange = getMoveRange('movePP');
   const powerRange = getMoveRange('movePower');
   const accuracyRange = getMoveRange('moveAccuracy');
@@ -1161,6 +1270,9 @@ function applyMoveFilters() {
     const accuracy = parseMoveFilterNumber(move.accuracy) ?? 0;
     const critRate = parseMoveFilterNumber(move.critRate) ?? 0;
     const priority = parseMoveFilterNumber(move.priority) ?? 0;
+    const moveKey = getPersonalToolsKey(move, 'move');
+    const isFavorite = Boolean(profile?.favorites?.includes(moveKey));
+    const hasNote = Boolean(profile?.notes?.[moveKey]?.trim());
     return matchesQuery
       && (selectedMoveTypes.size === 0 || selectedMoveTypes.has(move.type))
       && (selectedMoveCategoryFilter === 'any' || move.category === selectedMoveCategoryFilter)
@@ -1169,7 +1281,11 @@ function applyMoveFilters() {
       && power >= powerRange.min && power <= powerRange.max
       && accuracy >= accuracyRange.min && accuracy <= accuracyRange.max
       && critRate >= critRateRange.min && critRate <= critRateRange.max
-      && priority >= priorityRange.min && priority <= priorityRange.max;
+      && priority >= priorityRange.min && priority <= priorityRange.max
+      && (moveFavoriteFilter !== 'favorite' || isFavorite)
+      && (moveFavoriteFilter !== 'notFavorite' || !isFavorite)
+      && (moveNoteFilter !== 'hasNote' || hasNote)
+      && (moveNoteFilter !== 'noNote' || !hasNote);
   });
   renderMoveList();
   if (selectedMove) return;
@@ -1187,7 +1303,8 @@ function renderMoveList() {
     const card = document.createElement('button');
     card.type = 'button';
     card.className = 'pokemon-card move-card';
-    card.innerHTML = `<h3>${escapeHtml(move.name)}</h3><div class="move-card-meta"><span>${escapeHtml(move.type)}</span>${renderMoveCategoryBadge(move.category)}</div>`;
+    const isFavorite = Boolean(getCurrentProfile()?.favorites?.includes(getPersonalToolsKey(move, 'move')));
+    card.innerHTML = `<h3>${escapeHtml(move.name)}${isFavorite ? ' <span class="favorite-star" aria-label="Favorite">★</span>' : ''}</h3><div class="move-card-meta"><span>${escapeHtml(move.type)}</span>${renderMoveCategoryBadge(move.category)}</div>`;
     if (selectedMove?.id === move.id) card.classList.add('active');
     card.addEventListener('click', () => selectMove(move));
     elements.moveList.appendChild(card);
@@ -1229,13 +1346,17 @@ function renderMoveDetails(move) {
           ${renderMoveCategoryBadge(move.category)}
         </div>
       </div>
-      <section class="move-stat-grid" aria-label="Move stats">${statHtml}</section>
-      ${renderMoveTarget(move.target)}
+      ${renderPersonalTools(move, 'move')}
+      <div class="move-overview-grid">
+        <section class="move-stat-grid" aria-label="Move stats">${statHtml}</section>
+        ${renderMoveTarget(move.target)}
+      </div>
       ${renderMovePokedexSection(move)}
       ${effects.length ? `<section class="move-effects-section"><h2>Battle Effects</h2>${effects.map(([label, value]) => `<p><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</p>`).join('')}</section>` : ''}
       ${renderMoveLearnersSection(move)}
     </article>`;
 
+  bindPersonalToolHandlers(move, elements.moveDetails, 'move');
   elements.moveDetails.querySelectorAll('.move-pokedex-tab').forEach((button) => {
     button.addEventListener('click', () => {
       selectedMoveGen = button.dataset.gameset || Number(button.dataset.generation);
@@ -1272,7 +1393,7 @@ function renderMoveCategoryBadge(category) {
 
 function renderMovePokedexSection(move) {
   const descriptions = moveDescriptionsLookup[normalizePokemonName(move.name)] || {};
-  const tabs = Array.from({ length: 9 }, (_, index) => index + 1)
+  const tabs = Array.from({ length: 8 }, (_, index) => index + 2)
     .map((generation) => `<button type="button" class="pokedex-tab move-pokedex-tab${selectedMoveGen === generation ? ' active' : ''}" data-generation="${generation}">Gen ${generation}</button>`);
   tabs.push(`<button type="button" class="pokedex-tab move-pokedex-tab${selectedMoveGen === 'CHA' ? ' active' : ''}" data-gameset="CHA">CHA</button>`);
   const gamesets = selectedMoveGen === 'CHA'
@@ -1327,7 +1448,7 @@ function renderMoveTarget(targetValue) {
     { number: 1, label: 'Opponent', side: 'foe' },
     { number: 2, label: 'Opponent', side: 'foe' },
     { number: 3, label: 'Opponent', side: 'foe' },
-    { number: 4, label: 'You', side: 'ally' },
+    { number: 4, label: 'User', side: 'ally' },
     { number: 5, label: 'Ally', side: 'ally' },
     { number: 6, label: 'Ally', side: 'ally' }
   ];
@@ -1723,14 +1844,16 @@ function renderTypeFilters(pokemonList) {
     });
   });
 
-  document.querySelectorAll('.custom-filter-button').forEach((button) => {
+  document.querySelectorAll('#panel-custom .custom-filter-button').forEach((button) => {
     button.addEventListener('click', () => {
-      const value = button.dataset.customFilter || 'any';
       const group = button.dataset.customGroup;
+      const selectedValue = button.dataset.customFilter || 'any';
+      const isDeselecting = selectedValue !== 'any' && button.classList.contains('active');
+      const value = isDeselecting ? 'any' : selectedValue;
       if (group === 'favorites') customFavoriteFilter = value;
       if (group === 'notes') customNoteFilter = value;
-      document.querySelectorAll(`.custom-filter-button[data-custom-group="${group}"]`).forEach((item) => {
-        item.classList.toggle('active', item === button);
+      document.querySelectorAll(`#panel-custom .custom-filter-button[data-custom-group="${group}"]`).forEach((item) => {
+        item.classList.toggle('active', item.dataset.customFilter === value);
       });
       applyFilter();
     });
@@ -2373,7 +2496,7 @@ function renderDetails(pokemon) {
     elements.searchInput?.focus({ preventScroll: true });
   });
 
-  bindPersonalToolHandlers(pokemon);
+  bindPersonalToolHandlers(pokemon, elements.details);
 
   if (groupForms.length > 1) {
     elements.details.querySelectorAll('.form-select').forEach((button) => {
@@ -2536,11 +2659,12 @@ function bindStatCalculator(pokemon) {
   update();
 }
 
-function renderPersonalTools(pokemon) {
+function renderPersonalTools(item, itemType = 'pokemon') {
   const profile = getCurrentProfile();
-  const key = getPokemonKey(pokemon);
+  const key = getPersonalToolsKey(item, itemType);
   const isFavorite = Boolean(profile?.favorites?.includes(key));
   const note = profile?.notes?.[key] || '';
+  const noteId = `${itemType}PersonalNote`;
   return `
     <section class="personal-tools${currentUsername ? '' : ' locked'}" aria-label="Personal profile tools">
       <div class="personal-tool-panel favorite-panel">
@@ -2548,8 +2672,8 @@ function renderPersonalTools(pokemon) {
       </div>
       <div class="personal-tool-panel note-panel">
         <div class="note-editor">
-          <label for="pokemonNote">Personal note${currentUsername ? ` for ${escapeHtml(currentUsername)}` : ''}</label>
-          <textarea id="pokemonNote" class="pokemon-note" rows="2" maxlength="500" placeholder="Add a private note..." ${currentUsername ? '' : 'disabled'}>${escapeHtml(note)}</textarea>
+          <label for="${noteId}">Personal note${currentUsername ? ` for ${escapeHtml(currentUsername)}` : ''}</label>
+          <textarea id="${noteId}" class="pokemon-note" rows="2" maxlength="500" placeholder="Add a private note..." ${currentUsername ? '' : 'disabled'}>${escapeHtml(note)}</textarea>
           <div class="note-actions">
             <button type="button" class="save-note-button"${currentUsername ? '' : ' disabled'}>Save note</button>
             <span class="note-saved-message" aria-live="polite"></span>
@@ -2565,20 +2689,31 @@ function refreshPersonalTools(pokemon) {
   const currentTools = elements.details.querySelector('.personal-tools');
   if (!currentTools) return;
   currentTools.outerHTML = renderPersonalTools(pokemon);
-  bindPersonalToolHandlers(pokemon);
+  bindPersonalToolHandlers(pokemon, elements.details);
 }
 
-function bindPersonalToolHandlers(pokemon) {
-  elements.details.querySelector('.personal-tools-lock')?.addEventListener('click', () => {
+function refreshMovePersonalTools(move) {
+  const currentTools = elements.moveDetails.querySelector('.personal-tools');
+  if (!currentTools) return;
+  currentTools.outerHTML = renderPersonalTools(move, 'move');
+  bindPersonalToolHandlers(move, elements.moveDetails, 'move');
+}
+
+function getPersonalToolsKey(item, itemType) {
+  return itemType === 'move' ? `move|${item.id}` : getPokemonKey(item);
+}
+
+function bindPersonalToolHandlers(item, container, itemType = 'pokemon') {
+  container.querySelector('.personal-tools-lock')?.addEventListener('click', () => {
     openAuthModal('login');
   });
 
-  const favoriteButton = elements.details.querySelector('.favorite-button');
+  const favoriteButton = container.querySelector('.favorite-button');
   favoriteButton?.addEventListener('click', () => {
     if (!currentUsername) return;
     const profiles = getProfiles();
     const profile = profiles[currentUsername];
-    const key = getPokemonKey(pokemon);
+    const key = getPersonalToolsKey(item, itemType);
     const favoriteIndex = profile.favorites.indexOf(key);
     if (favoriteIndex >= 0) profile.favorites.splice(favoriteIndex, 1);
     else profile.favorites.push(key);
@@ -2586,20 +2721,22 @@ function bindPersonalToolHandlers(pokemon) {
     const isFavorite = profile.favorites.includes(key);
     favoriteButton.classList.toggle('active', isFavorite);
     favoriteButton.textContent = isFavorite ? '★ Favorited' : '☆ Favorite';
-    applyFilter();
+    if (itemType === 'pokemon') applyFilter();
+    else applyMoveFilters();
   });
 
-  elements.details.querySelector('.save-note-button')?.addEventListener('click', () => {
+  container.querySelector('.save-note-button')?.addEventListener('click', () => {
     if (!currentUsername) return;
     const profiles = getProfiles();
     const profile = profiles[currentUsername];
-    const key = getPokemonKey(pokemon);
-    const note = elements.details.querySelector('.pokemon-note')?.value.trim() || '';
+    const key = getPersonalToolsKey(item, itemType);
+    const note = container.querySelector('.pokemon-note')?.value.trim() || '';
     if (note) profile.notes[key] = note;
     else delete profile.notes[key];
     saveProfiles(profiles);
-    applyFilter();
-    const message = elements.details.querySelector('.note-saved-message');
+    if (itemType === 'pokemon') applyFilter();
+    else applyMoveFilters();
+    const message = container.querySelector('.note-saved-message');
     if (message) message.textContent = 'Saved';
   });
 }

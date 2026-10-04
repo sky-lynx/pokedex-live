@@ -186,6 +186,7 @@
             <button type="button" class="filter-tab" data-move-panel="category" role="tab" aria-selected="false">Category</button>
             <button type="button" class="filter-tab" data-move-panel="stats" role="tab" aria-selected="false">Stats</button>
             <button type="button" class="filter-tab" data-move-panel="target" role="tab" aria-selected="false">Target</button>
+            <button type="button" class="filter-tab" data-move-panel="custom" role="tab" aria-selected="false">Custom</button>
           </div>
           <div id="moveFilterPanels">
             <div id="movePanel-type" class="filter-panel">
@@ -203,6 +204,24 @@
             </div>
             <div id="movePanel-target" class="filter-panel" style="display:none">
               <div id="moveTargetButtons" class="generation-grid move-target-filter-buttons"></div>
+            </div>
+            <div id="movePanel-custom" class="filter-panel" style="display:none">
+              <div class="custom-filter-section">
+                <h3>Favorites</h3>
+                <div class="generation-grid custom-filter-grid">
+                  <button type="button" class="generation-button custom-filter-button active" data-move-custom-group="favorites" data-move-custom-filter="any">Any</button>
+                  <button type="button" class="generation-button custom-filter-button" data-move-custom-group="favorites" data-move-custom-filter="favorite">Favorites</button>
+                  <button type="button" class="generation-button custom-filter-button" data-move-custom-group="favorites" data-move-custom-filter="notFavorite">Non-favorites</button>
+                </div>
+              </div>
+              <div class="custom-filter-section">
+                <h3>Notes</h3>
+                <div class="generation-grid custom-filter-grid">
+                  <button type="button" class="generation-button custom-filter-button active" data-move-custom-group="notes" data-move-custom-filter="any">Any</button>
+                  <button type="button" class="generation-button custom-filter-button" data-move-custom-group="notes" data-move-custom-filter="hasNote">Has note</button>
+                  <button type="button" class="generation-button custom-filter-button" data-move-custom-group="notes" data-move-custom-filter="noNote">No note</button>
+                </div>
+              </div>
             </div>
           </div>
         </section>
