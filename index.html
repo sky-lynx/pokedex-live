@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Interactive Pokédex</title>
+  <title>PokéDex Live</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -11,7 +11,7 @@
     <header class="hero">
       <div>
         <p id="heroEyebrow" class="eyebrow">Live Pokédex</p>
-        <h1 id="heroTitle">Interactive Pokémon Explorer</h1>
+        <h1 id="heroTitle">PokéDex Live</h1>
       </div>
       <div class="hero-actions">
         <div class="hero-buttons">
@@ -20,8 +20,9 @@
           <button id="profileButton" type="button" class="button profile-button">Log in</button>
         </div>
         <div class="dex-switcher" role="tablist" aria-label="Dex view">
-          <button id="pokedexTab" class="dex-tab active" type="button" role="tab" aria-selected="true" aria-controls="pokedexView">Pokédex</button>
-          <button id="movedexTab" class="dex-tab" type="button" role="tab" aria-selected="false" aria-controls="movedexView">Movedex</button>
+          <button id="pokedexTab" class="dex-tab active" type="button" role="tab" aria-selected="true" aria-controls="pokedexView">PokéDex</button>
+          <button id="movedexTab" class="dex-tab" type="button" role="tab" aria-selected="false" aria-controls="movedexView">MoveDex</button>
+          <button id="abilitydexTab" class="dex-tab" type="button" role="tab" aria-selected="false" aria-controls="abilitydexView">AbilityDex</button>
         </div>
         <div id="status" class="status-message">Loading sheet data...</div>
       </div>
@@ -231,6 +232,59 @@
         <div id="moveDetails" class="details-placeholder">
           <h2>Move details will appear here</h2>
           <p>Choose a move from the list or search by name.</p>
+        </div>
+      </section>
+    </main>
+
+    <main id="abilitydexView" class="layout movedex-view abilitydex-view" hidden>
+      <aside class="panel panel-left">
+        <section class="list-card">
+          <div class="search-row">
+            <label for="abilitySearchInput">Search abilities</label>
+            <input id="abilitySearchInput" type="search" placeholder="Type ability name..." autocomplete="off" />
+          </div>
+          <div class="section-header">
+            <h2>Abilities</h2>
+            <span id="abilityListCount" class="small">0 available</span>
+          </div>
+          <div id="abilityList" class="pokemon-list move-list"></div>
+        </section>
+
+        <section class="type-filter-card ability-filter-card">
+          <div class="section-header">
+            <h2>Filters</h2>
+            <button id="clearAbilityFiltersButton" type="button" class="filters-button">Clear filters</button>
+          </div>
+          <div id="abilityFilterTabs" class="filter-tabs" role="tablist" aria-label="Ability filters">
+            <button type="button" class="filter-tab active" data-ability-panel="custom" role="tab" aria-selected="true">Custom</button>
+          </div>
+          <div id="abilityFilterPanels">
+            <div id="abilityPanel-custom" class="filter-panel">
+              <div class="custom-filter-section">
+                <h3>Favorites</h3>
+                <div class="generation-grid custom-filter-grid">
+                  <button type="button" class="generation-button custom-filter-button active" data-ability-custom-group="favorites" data-ability-custom-filter="any">Any</button>
+                  <button type="button" class="generation-button custom-filter-button" data-ability-custom-group="favorites" data-ability-custom-filter="favorite">Favorites</button>
+                  <button type="button" class="generation-button custom-filter-button" data-ability-custom-group="favorites" data-ability-custom-filter="notFavorite">Non-favorites</button>
+                </div>
+              </div>
+              <div class="custom-filter-section">
+                <h3>Notes</h3>
+                <div class="generation-grid custom-filter-grid">
+                  <button type="button" class="generation-button custom-filter-button active" data-ability-custom-group="notes" data-ability-custom-filter="any">Any</button>
+                  <button type="button" class="generation-button custom-filter-button" data-ability-custom-group="notes" data-ability-custom-filter="hasNote">Has note</button>
+                  <button type="button" class="generation-button custom-filter-button" data-ability-custom-group="notes" data-ability-custom-filter="noNote">No note</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </aside>
+
+      <section class="panel panel-right">
+        <div id="abilityDetails" class="details-placeholder">
+          <h2>Ability details will appear here</h2>
+          <p>Choose an ability from the list.</p>
         </div>
       </section>
     </main>

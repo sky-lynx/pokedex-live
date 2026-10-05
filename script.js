@@ -93,13 +93,21 @@ const elements = {
   moveTypeButtons: document.getElementById('moveTypeButtons'),
   moveCategoryButtons: document.getElementById('moveCategoryButtons'),
   moveTargetButtons: document.getElementById('moveTargetButtons'),
-  moveNumericFilters: document.getElementById('moveNumericFilters')
+  moveNumericFilters: document.getElementById('moveNumericFilters'),
+  abilitySearchInput: document.getElementById('abilitySearchInput'),
+  abilityList: document.getElementById('abilityList'),
+  abilityListCount: document.getElementById('abilityListCount'),
+  abilityDetails: document.getElementById('abilityDetails')
 };
 
 let allPokemon = [];
 let filteredPokemon = [];
+let pokemonIndexLookup = new WeakMap();
+let pokemonListRenderToken = 0;
+let pendingPokemonScroll = false;
 let activeType = null;
 let selectedPokemon = null;
+let selectedDex = 'pokemon';
 let selectedPokedexGen = 1;
 let selectedMoveCategory = 'levelUp';
 let typingFilterValue = 'any';
@@ -108,15 +116,31 @@ let groupsByDex = {};
 let movesLookup = {};
 let allMoves = [];
 let filteredMoves = [];
+let allAbilities = [];
+let filteredAbilities = [];
+let abilitySheetRows = [];
+let abilityDataLoaded = false;
+let moveDataLoaded = false;
+let moveDescriptionsLoaded = false;
+let moveDexInitialized = false;
+let abilityDexInitialized = false;
+let abilityDataPromise = null;
+let moveDexDataPromise = null;
+let moveDescriptionsDataPromise = null;
 let moveLearnersLookup = {};
 let moveDescriptionsLookup = {};
 let moveDescriptionGamesets = [];
 let selectedMove = null;
+let selectedAbility = null;
+let selectedAbilityGen = 3;
+let abilityDescriptionGamesets = [];
 let selectedMoveTypes = new Set();
 let selectedMoveCategoryFilter = 'any';
 let selectedMoveTarget = 'any';
 let moveFavoriteFilter = 'any';
 let moveNoteFilter = 'any';
+let abilityFavoriteFilter = 'any';
+let abilityNoteFilter = 'any';
 let selectedMoveGen = 9;
 let selectedMoveLearnerCategory = 'levelUp';
 let abilityDescriptionsLookup = {};
@@ -148,6 +172,17 @@ async function initialize() {
   bindProfileControls();
   bindSidebarToggle();
   bindFloatingActions();
+  document.addEventListener('pointerover', (event) => {
+    if (event.target instanceof Element && event.target.closest('.ability-box') && !abilityDataLoaded) {
+      loadSupportingData();
+    }
+  });
+  elements.pokemonList.addEventListener('click', (event) => {
+    const card = event.target.closest('[data-pokemon-index]');
+    if (!card || !elements.pokemonList.contains(card)) return;
+    const pokemon = allPokemon[Number(card.dataset.pokemonIndex)];
+    if (pokemon) selectPokemon(pokemon);
+  });
   elements.status.textContent = 'Loading sheet data from Google...';
   let pokemonDataLoaded = false;
   try {
@@ -156,8 +191,8 @@ async function initialize() {
       loadCachedSheetRows('pokedex', loadPokedexData)
     ]);
     allPokemon = buildPokemon(rawRows);
+    pokemonIndexLookup = new WeakMap(allPokemon.map((pokemon, index) => [pokemon, index]));
     const pokedexLookup = buildPokedexLookup(pokedexRows);
-    moveLearnersLookup = buildMoveLearnersLookup(allPokemon);
     allPokemon.forEach((pokemon) => {
       const formKey = buildPokedexLookupKey(pokemon.number, pokemon.mainDex, pokemon.name);
       const pokedexData = pokedexLookup[formKey] || pokedexLookup[normalizePokemonName(pokemon.name)];
@@ -183,6 +218,7 @@ async function initialize() {
 
   elements.searchInput.addEventListener('input', handleSearch);
   elements.moveSearchInput?.addEventListener('input', applyMoveFilters);
+  elements.abilitySearchInput?.addEventListener('input', applyAbilityFilters);
   elements.moveTypeButtons?.addEventListener('click', (event) => {
     const button = event.target.closest('[data-move-type]');
     if (!button) return;
@@ -246,39 +282,105 @@ async function initialize() {
     resetMoveRangeFilters();
     applyMoveFilters();
   });
+  document.querySelectorAll('#abilityPanel-custom .custom-filter-button').forEach((button) => {
+    button.addEventListener('click', () => {
+      const group = button.dataset.abilityCustomGroup;
+      const selectedValue = button.dataset.abilityCustomFilter || 'any';
+      const isDeselecting = selectedValue !== 'any' && button.classList.contains('active');
+      const value = isDeselecting ? 'any' : selectedValue;
+      if (group === 'favorites') abilityFavoriteFilter = value;
+      if (group === 'notes') abilityNoteFilter = value;
+      document.querySelectorAll(`#abilityPanel-custom .custom-filter-button[data-ability-custom-group="${group}"]`).forEach((item) => {
+        item.classList.toggle('active', item.dataset.abilityCustomFilter === value);
+      });
+      applyAbilityFilters();
+    });
+  });
+  document.getElementById('clearAbilityFiltersButton')?.addEventListener('click', () => {
+    if (elements.abilitySearchInput) elements.abilitySearchInput.value = '';
+    abilityFavoriteFilter = 'any';
+    abilityNoteFilter = 'any';
+    document.querySelectorAll('#abilityPanel-custom .custom-filter-button').forEach((button) => {
+      button.classList.toggle('active', button.dataset.abilityCustomFilter === 'any');
+    });
+    applyAbilityFilters();
+  });
   bindDexSwitcher();
   bindMoveFilterTabs();
+  bindStatCalculatorDismissal();
   const clearFilters = document.getElementById('clearFiltersButton');
   if (clearFilters) {
     clearFilters.addEventListener('click', resetFilters);
   }
-  if (pokemonDataLoaded) loadSupportingData();
-  elements.randomButton.addEventListener('click', () => {
-    if (filteredPokemon.length === 0) return;
-    const random = filteredPokemon[Math.floor(Math.random() * filteredPokemon.length)];
-    selectPokemon(random);
-    scrollToSelected();
-  });
+  if (pokemonDataLoaded) loadMoveDexData();
+  elements.randomButton.addEventListener('click', selectRandomDexEntry);
 };
 
-async function loadSupportingData() {
-  try {
-    const [movesRows, abilityRows, moveDescriptionRows] = await Promise.all([
-      loadCachedSheetRows('moves', loadMovesData),
-      loadCachedSheetRows('abilities', loadAbilityData),
-      loadCachedSheetRows('move-descriptions', loadMoveDescriptionsData)
-    ]);
+function selectRandomDexEntry() {
+  if (selectedDex === 'pokemon') {
+    if (!filteredPokemon.length) return;
+    selectPokemon(filteredPokemon[Math.floor(Math.random() * filteredPokemon.length)]);
+    scrollToSelected();
+    return;
+  }
+  if (selectedDex === 'move') {
+    if (!filteredMoves.length) return;
+    selectMove(filteredMoves[Math.floor(Math.random() * filteredMoves.length)]);
+    return;
+  }
+  if (!filteredAbilities.length) return;
+  selectAbility(filteredAbilities[Math.floor(Math.random() * filteredAbilities.length)]);
+}
+
+function loadSupportingData() {
+  if (abilityDataPromise) return abilityDataPromise;
+  abilityDataPromise = (async () => {
+    try {
+      const abilityRows = await loadCachedSheetRows('abilities', loadAbilityData);
+      abilitySheetRows = abilityRows;
+      abilityDescriptionsLookup = buildAbilityDescriptionsLookup(abilityRows);
+      abilityDescriptionGamesets = getAbilityDescriptionGamesets(abilityRows);
+      abilityDataLoaded = true;
+      refreshPokemonAbilitySection();
+      initializeDexView(selectedDex);
+    } catch (error) {
+      abilityDataPromise = null;
+      console.error('Unable to load ability data', error);
+      elements.status.textContent = `Loaded ${allPokemon.length} Pokémon, but ability descriptions could not be loaded.`;
+    }
+  })();
+  return abilityDataPromise;
+}
+
+function loadMoveDexData() {
+  if (moveDexDataPromise) return moveDexDataPromise;
+  moveDexDataPromise = loadCachedSheetRows('moves', loadMovesData).then((movesRows) => {
     movesLookup = buildMovesLookup(movesRows);
     allMoves = Object.values(movesLookup).filter((move) => move.name).sort((a, b) => a.name.localeCompare(b.name));
-    moveDescriptionsLookup = buildMoveDescriptionsLookup(moveDescriptionRows);
-    moveDescriptionGamesets = moveDescriptionRows.length ? getMoveDescriptionGamesets(moveDescriptionRows) : [];
-    abilityDescriptionsLookup = buildAbilityDescriptionsLookup(abilityRows);
-    renderMoveFilters();
-    applyMoveFilters();
-  } catch (error) {
+    moveDataLoaded = true;
+    refreshPokemonMoveset();
+    initializeDexView('move');
+  }).catch((error) => {
+    moveDexDataPromise = null;
     console.error('Unable to load move data', error);
     elements.status.textContent = `Loaded ${allPokemon.length} Pokémon, but move data could not be loaded.`;
-  }
+  });
+  return moveDexDataPromise;
+}
+
+function loadMoveDescriptions() {
+  if (moveDescriptionsDataPromise) return moveDescriptionsDataPromise;
+  moveDescriptionsDataPromise = loadCachedSheetRows('move-descriptions', loadMoveDescriptionsData).then((rows) => {
+    moveDescriptionsLookup = buildMoveDescriptionsLookup(rows);
+    moveDescriptionGamesets = rows.length ? getMoveDescriptionGamesets(rows) : [];
+    moveDescriptionsLoaded = true;
+    initializeDexView('move');
+  }).catch((error) => {
+    moveDescriptionsDataPromise = null;
+    console.error('Unable to load move descriptions', error);
+    elements.status.textContent = `Loaded ${allPokemon.length} Pokémon and moves, but move descriptions could not be loaded.`;
+  });
+  return moveDescriptionsDataPromise;
 }
 
 function bindFloatingActions() {
@@ -313,32 +415,90 @@ function bindSidebarToggle() {
 function bindDexSwitcher() {
   const pokedexTab = document.getElementById('pokedexTab');
   const movedexTab = document.getElementById('movedexTab');
-  pokedexTab.addEventListener('click', () => switchDexView(false));
-  movedexTab.addEventListener('click', () => switchDexView(true));
+  const abilitydexTab = document.getElementById('abilitydexTab');
+  pokedexTab.addEventListener('click', () => switchDexView('pokemon'));
+  movedexTab.addEventListener('click', () => switchDexView('move'));
+  abilitydexTab.addEventListener('click', () => switchDexView('ability'));
 }
 
-function switchDexView(showMoves) {
-  const pokedexView = document.getElementById('pokedexView');
-  const movedexView = document.getElementById('movedexView');
-  const pokedexTab = document.getElementById('pokedexTab');
-  const movedexTab = document.getElementById('movedexTab');
-  pokedexView.hidden = showMoves;
-  movedexView.hidden = !showMoves;
-  const activeView = showMoves ? movedexView : pokedexView;
+function switchDexView(dex) {
+  const views = {
+    pokemon: document.getElementById('pokedexView'),
+    move: document.getElementById('movedexView'),
+    ability: document.getElementById('abilitydexView')
+  };
+  const tabs = {
+    pokemon: document.getElementById('pokedexTab'),
+    move: document.getElementById('movedexTab'),
+    ability: document.getElementById('abilitydexTab')
+  };
+  selectedDex = dex;
+  Object.entries(views).forEach(([key, view]) => {
+    view.hidden = key !== dex;
+    tabs[key].classList.toggle('active', key === dex);
+    tabs[key].setAttribute('aria-selected', String(key === dex));
+  });
+  document.querySelector('.dex-switcher').style.setProperty(
+    '--dex-active-index',
+    String(Object.keys(tabs).indexOf(dex))
+  );
+  const activeView = views[dex];
   activeView.classList.remove('dex-view-enter');
   void activeView.offsetWidth;
   activeView.classList.add('dex-view-enter');
   activeView.addEventListener('animationend', () => {
     activeView.classList.remove('dex-view-enter');
   }, { once: true });
-  pokedexTab.classList.toggle('active', !showMoves);
-  movedexTab.classList.toggle('active', showMoves);
-  pokedexTab.setAttribute('aria-selected', String(!showMoves));
-  movedexTab.setAttribute('aria-selected', String(showMoves));
-  document.getElementById('heroEyebrow').textContent = showMoves ? 'Live Movedex' : 'Live Pokédex';
-  document.getElementById('heroTitle').textContent = showMoves ? 'Interactive Move Explorer' : 'Interactive Pokémon Explorer';
-  elements.randomButton.hidden = showMoves;
-  elements.floatingRandomButton.hidden = showMoves;
+  requestAnimationFrame(() => scrollToSelectedDexEntry(dex));
+  const dexTitles = {
+    pokemon: ['PokéDex Live', 'PokéDex Live'],
+    move: ['PokéDex Live', 'MoveDex Live'],
+    ability: ['PokéDex Live', 'AbilityDex Live']
+  };
+  document.getElementById('heroEyebrow').textContent = dexTitles[dex][0];
+  document.getElementById('heroTitle').textContent = dexTitles[dex][1];
+  const randomLabels = {
+    pokemon: 'Random Pokémon',
+    move: 'Random Move',
+    ability: 'Random Ability'
+  };
+  elements.randomButton.textContent = randomLabels[dex];
+  elements.floatingRandomButton.textContent = randomLabels[dex];
+  elements.randomButton.hidden = false;
+  elements.floatingRandomButton.hidden = false;
+  initializeDexView(dex);
+}
+
+function initializeDexView(dex) {
+  if (dex === 'move' && !moveDataLoaded) {
+    loadMoveDexData();
+    return;
+  }
+  if (dex === 'move' && !moveDescriptionsLoaded) {
+    loadMoveDescriptions();
+    return;
+  }
+  if (dex === 'move' && !moveDexInitialized) {
+    moveLearnersLookup = buildMoveLearnersLookup(allPokemon);
+    moveDexInitialized = true;
+    renderMoveFilters();
+    applyMoveFilters();
+    return;
+  }
+  if (dex === 'ability' && !abilityDataLoaded) {
+    loadSupportingData();
+    return;
+  }
+  if (dex === 'ability' && !abilityDexInitialized) {
+    abilityDexInitialized = true;
+    allAbilities = buildAbilityDexEntries(abilitySheetRows, allPokemon);
+    if (allAbilities.length) {
+      applyAbilityFilters();
+    } else {
+      renderAbilityList();
+      elements.abilityDetails.innerHTML = '<div class="details-placeholder"><h2>No ability data available</h2><p>Ability entries could not be loaded from the published sheet.</p></div>';
+    }
+  }
 }
 
 function navigateToPokemon(number, name) {
@@ -347,7 +507,7 @@ function navigateToPokemon(number, name) {
     && normalizePokemonName(entry.name) === normalizePokemonName(name)
   ));
   if (!pokemon) return;
-  switchDexView(false);
+  switchDexView('pokemon');
   resetFilters();
   selectPokemon(pokemon);
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -356,7 +516,7 @@ function navigateToPokemon(number, name) {
 function navigateToMove(moveId) {
   const move = movesLookup[moveId];
   if (!move) return;
-  switchDexView(true);
+  switchDexView('move');
   elements.moveSearchInput.value = '';
   selectedMoveTypes.clear();
   selectedMoveCategoryFilter = 'any';
@@ -405,8 +565,10 @@ function bindProfileControls() {
       updateProfileButton();
       applyFilter();
       applyMoveFilters();
+      applyAbilityFilters();
       if (selectedPokemon) refreshPersonalTools(selectedPokemon);
       if (selectedMove) refreshMovePersonalTools(selectedMove);
+      if (selectedAbility) refreshAbilityPersonalTools(selectedAbility);
       return;
     }
     openAuthModal('login');
@@ -485,8 +647,10 @@ function handleAuthSubmit(event) {
   form.reset();
   applyFilter();
   applyMoveFilters();
+  applyAbilityFilters();
   if (selectedPokemon) refreshPersonalTools(selectedPokemon);
   if (selectedMove) refreshMovePersonalTools(selectedMove);
+  if (selectedAbility) refreshAbilityPersonalTools(selectedAbility);
 }
 
 function resetFilters() {
@@ -610,17 +774,28 @@ async function writeCachedSheetRows(key, rows) {
 async function loadCachedSheetRows(key, loader) {
   const cachedRows = await readCachedSheetRows(key);
   if (cachedRows) {
-    loader()
-      .then(async (rows) => {
-        if (rows.length) await writeCachedSheetRows(key, rows);
-      })
-      .catch((error) => console.warn(`Unable to refresh cached ${key} sheet data`, error));
+    scheduleSheetRefresh(key, loader);
     return cachedRows;
   }
 
   const rows = await loader();
   if (rows.length) await writeCachedSheetRows(key, rows);
   return rows;
+}
+
+function scheduleSheetRefresh(key, loader) {
+  const refresh = () => {
+    loader()
+      .then(async (rows) => {
+        if (rows.length) await writeCachedSheetRows(key, rows);
+      })
+      .catch((error) => console.warn(`Unable to refresh cached ${key} sheet data`, error));
+  };
+  if ('requestIdleCallback' in window) {
+    window.requestIdleCallback(refresh, { timeout: 5000 });
+  } else {
+    window.setTimeout(refresh, 1000);
+  }
 }
 
 async function loadData() {
@@ -764,6 +939,63 @@ function buildAbilityDescriptionsLookup(rows) {
   }, {});
 }
 
+function getAbilityDescriptionGamesets(rows) {
+  const headerIndex = rows.findIndex((row) => (
+    String(row[0] || '').trim() === 'Dex #'
+    && String(row[1] || '').trim() === 'Ability'
+  ));
+  return headerIndex < 0
+    ? []
+    : rows[headerIndex].slice(2).map((gameset) => String(gameset || '').trim()).filter(Boolean);
+}
+
+function buildAbilityPokemonLookup(pokemonList) {
+  const lookup = {};
+  pokemonList.forEach((pokemon) => {
+    const slotsByAbility = new Map();
+    pokemon.abilities.forEach((ability) => {
+      const key = normalizePokemonName(ability);
+      if (key) slotsByAbility.set(key, ['Regular']);
+    });
+    const hiddenKey = normalizePokemonName(pokemon.hiddenAbility);
+    if (hiddenKey) {
+      const slots = slotsByAbility.get(hiddenKey) || [];
+      slots.push('Hidden');
+      slotsByAbility.set(hiddenKey, slots);
+    }
+    slotsByAbility.forEach((slots, key) => {
+      if (!lookup[key]) lookup[key] = [];
+      lookup[key].push({ pokemon, slots });
+    });
+  });
+  return lookup;
+}
+
+function buildAbilityDexEntries(rows, pokemonList) {
+  const headerIndex = rows.findIndex((row) => (
+    String(row[0] || '').trim() === 'Dex #'
+    && String(row[1] || '').trim() === 'Ability'
+  ));
+  if (headerIndex < 0) return [];
+
+  const headers = rows[headerIndex];
+  const pokemonByAbility = buildAbilityPokemonLookup(pokemonList);
+  return rows.slice(headerIndex + 1).reduce((entries, row) => {
+    const dexNumber = String(row[0] || '').trim();
+    const name = String(row[1] || '').trim();
+    if (!dexNumber || !name) return entries;
+    const descriptions = headers.slice(2).reduce((lookup, gameset, index) => {
+      const key = String(gameset || '').trim();
+      const description = String(row[index + 2] || '').trim();
+      if (key && description && description.toLowerCase() !== 'undefined') lookup[key] = description;
+      return lookup;
+    }, {});
+    const pokemon = pokemonByAbility[normalizePokemonName(name)] || [];
+    entries.push({ dexNumber, name, descriptions, pokemon });
+    return entries;
+  }, []).sort((left, right) => Number(left.dexNumber) - Number(right.dexNumber));
+}
+
 function buildPokedexLookup(rows) {
   const headerIndex = rows.findIndex((row) => (
     String(row[0] || '').trim() === 'Dex #'
@@ -798,11 +1030,12 @@ function buildPokedexLookup(rows) {
   }, {});
 }
 
-function parseCSV(text) {
+async function parseCSV(text) {
   const rows = [];
   let current = [];
   let buffer = '';
   let insideQuotes = false;
+  const cleanCell = (value) => value.replace(/\s+/g, ' ').trim();
   for (let i = 0; i < text.length; i += 1) {
     const char = text[i];
     const next = text[i + 1];
@@ -822,12 +1055,12 @@ function parseCSV(text) {
       if (char === '"') {
         insideQuotes = true;
       } else if (char === ',') {
-        current.push(buffer.trim());
+        current.push(cleanCell(buffer));
         buffer = '';
       } else if (char === '\r') {
         continue;
       } else if (char === '\n') {
-        current.push(buffer.trim());
+        current.push(cleanCell(buffer));
         rows.push(current);
         current = [];
         buffer = '';
@@ -835,12 +1068,15 @@ function parseCSV(text) {
         buffer += char;
       }
     }
+    if ((i + 1) % 16384 === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
   }
   if (buffer.length || current.length) {
-    current.push(buffer.trim());
+    current.push(cleanCell(buffer));
     rows.push(current);
   }
-  return rows.map(row => row.map(cell => cell.replace(/\s+/g, ' ').trim()));
+  return rows;
 }
 
 function parseSheetHTML(htmlText) {
@@ -1299,16 +1535,76 @@ function applyMoveFilters() {
 function renderMoveList() {
   elements.moveList.innerHTML = '';
   elements.moveListCount.textContent = `${filteredMoves.length} available`;
+  const profile = getCurrentProfile();
   filteredMoves.forEach((move) => {
+    const card = document.createElement('div');
+    card.className = 'pokemon-card move-card';
+    card.tabIndex = 0;
+    card.setAttribute('role', 'button');
+    const isFavorite = Boolean(profile?.favorites?.includes(getPersonalToolsKey(move, 'move')));
+    card.innerHTML = `<h3>${escapeHtml(move.name)}${isFavorite ? ' <span class="favorite-star" aria-label="Favorite">★</span>' : ''}</h3><div class="move-card-meta">${renderMoveTypePill(move.type)}${renderMoveCategoryBadge(move.category)}</div>`;
+    if (selectedMove?.id === move.id) card.classList.add('active');
+    card.addEventListener('click', (event) => {
+      selectMove(move);
+    });
+    card.addEventListener('keydown', (event) => {
+      if (event.target !== card || !['Enter', ' '].includes(event.key)) return;
+      event.preventDefault();
+      selectMove(move);
+    });
+    elements.moveList.appendChild(card);
+  });
+}
+
+function renderAbilityList() {
+  elements.abilityList.innerHTML = '';
+  elements.abilityListCount.textContent = `${filteredAbilities.length} available`;
+  const profile = getCurrentProfile();
+  filteredAbilities.forEach((ability) => {
     const card = document.createElement('button');
     card.type = 'button';
     card.className = 'pokemon-card move-card';
-    const isFavorite = Boolean(getCurrentProfile()?.favorites?.includes(getPersonalToolsKey(move, 'move')));
-    card.innerHTML = `<h3>${escapeHtml(move.name)}${isFavorite ? ' <span class="favorite-star" aria-label="Favorite">★</span>' : ''}</h3><div class="move-card-meta"><span>${escapeHtml(move.type)}</span>${renderMoveCategoryBadge(move.category)}</div>`;
-    if (selectedMove?.id === move.id) card.classList.add('active');
-    card.addEventListener('click', () => selectMove(move));
-    elements.moveList.appendChild(card);
+    const isFavorite = Boolean(profile?.favorites?.includes(getPersonalToolsKey(ability, 'ability')));
+    card.innerHTML = `<h3>${escapeHtml(ability.name)}${isFavorite ? ' <span class="favorite-star" aria-label="Favorite">★</span>' : ''}</h3>`;
+    if (selectedAbility?.dexNumber === ability.dexNumber) card.classList.add('active');
+    card.addEventListener('click', () => selectAbility(ability));
+    elements.abilityList.appendChild(card);
   });
+  if (selectedDex === 'ability') scrollToSelectedDexEntry('ability');
+}
+
+function applyAbilityFilters() {
+  if (!abilityDexInitialized) return;
+  const query = String(elements.abilitySearchInput?.value || '').trim().toLowerCase();
+  const profile = getCurrentProfile();
+  filteredAbilities = allAbilities.filter((ability) => {
+    const matchesQuery = !query || ability.name.toLowerCase().includes(query);
+    const key = getPersonalToolsKey(ability, 'ability');
+    const isFavorite = Boolean(profile?.favorites?.includes(key));
+    const hasNote = Boolean(profile?.notes?.[key]?.trim());
+    return matchesQuery
+      && (abilityFavoriteFilter !== 'favorite' || isFavorite)
+      && (abilityFavoriteFilter !== 'notFavorite' || !isFavorite)
+      && (abilityNoteFilter !== 'hasNote' || hasNote)
+      && (abilityNoteFilter !== 'noNote' || !hasNote);
+  });
+  renderAbilityList();
+
+  if (selectedAbility && filteredAbilities.some((ability) => ability.dexNumber === selectedAbility.dexNumber)) return;
+  if (filteredAbilities.length) {
+    selectAbility(filteredAbilities[0]);
+  } else {
+    selectedAbility = null;
+    elements.abilityDetails.innerHTML = '<div class="details-placeholder"><h2>No abilities found</h2><p>Try another search or filter.</p></div>';
+  }
+}
+
+function selectAbility(ability) {
+  selectedAbility = ability;
+  selectedAbilityGen = 9;
+  renderAbilityList();
+  renderAbilityDetails(ability);
+  if (selectedDex === 'ability') scrollToSelectedDexEntry('ability');
 }
 
 function selectMove(move) {
@@ -1316,6 +1612,7 @@ function selectMove(move) {
   selectedMoveLearnerCategory = 'levelUp';
   renderMoveList();
   renderMoveDetails(move);
+  if (selectedDex === 'move') scrollToSelectedDexEntry('move');
 }
 
 function renderMoveDetails(move) {
@@ -1374,6 +1671,87 @@ function renderMoveDetails(move) {
       renderMoveDetails(move);
     });
   });
+}
+
+function renderAbilityDetails(ability) {
+  elements.abilityDetails.classList.remove('details-placeholder');
+  elements.abilityDetails.innerHTML = `
+    <article class="detail-card move-detail-card ability-detail-card">
+      <div class="move-detail-heading">
+        <h2>${escapeHtml(ability.name)}</h2>
+      </div>
+      ${renderPersonalTools(ability, 'ability')}
+      ${renderAbilityEntriesSection(ability)}
+      ${renderAbilityPokemonSection(ability)}
+    </article>`;
+
+  bindPersonalToolHandlers(ability, elements.abilityDetails, 'ability');
+  elements.abilityDetails.querySelectorAll('.ability-dex-tab').forEach((button) => {
+    button.addEventListener('click', () => {
+      selectedAbilityGen = button.dataset.generation === 'CHA' ? 'CHA' : Number(button.dataset.generation);
+      renderAbilityDetails(ability);
+    });
+  });
+  elements.abilityDetails.querySelectorAll('.pokemon-navigation-link').forEach((button) => {
+    button.addEventListener('click', () => navigateToPokemon(button.dataset.pokemonNumber, button.dataset.pokemonName));
+  });
+  attachTypeHoverHandlers(elements.abilityDetails);
+  attachPopupClickHandler(elements.abilityDetails);
+}
+
+function renderAbilityEntriesSection(ability) {
+  const generations = [...new Set(abilityDescriptionGamesets.map((gameset) => (
+    gameset === 'CHA' ? 'CHA' : MOVE_GAMESET_INFO[gameset]?.generation
+  )).filter(Boolean))];
+  const tabs = generations.map((generation) => `
+    <button type="button" class="pokedex-tab ability-dex-tab${selectedAbilityGen === generation ? ' active' : ''}" data-generation="${generation}">
+      ${generation === 'CHA' ? 'CHA' : `Gen ${generation}`}
+    </button>`).join('');
+  const gamesets = abilityDescriptionGamesets.filter((gameset) => (
+    selectedAbilityGen === 'CHA'
+      ? gameset === 'CHA'
+      : MOVE_GAMESET_INFO[gameset]?.generation === selectedAbilityGen
+  ));
+  const cards = gamesets.map((gameset) => {
+    const game = MOVE_GAMESET_INFO[gameset]?.label || gameset;
+    const description = ability.descriptions[gameset];
+    if (!description) {
+      return `<div class="pokedex-entry-box pokedex-no-entry"><div class="pokedex-entry-game">${escapeHtml(game)}</div><div class="pokedex-entry-text">No Dex Entry</div></div>`;
+    }
+    const color = getGameGradientColor(game) || '#38bdf8';
+    const gradient = color.startsWith('rgba(') ? color : hexToRgba(color, 0.18);
+    return `<div class="pokedex-entry-box" style="background:linear-gradient(360deg,rgba(15,23,32,0.92),${gradient})"><div class="pokedex-entry-game">${escapeHtml(game)}</div><div class="pokedex-entry-text">${escapeHtml(description)}</div></div>`;
+  }).join('');
+  const content = cards || `<div class="pokedex-empty">No ability entries are listed for ${selectedAbilityGen === 'CHA' ? 'Pokémon Champions' : `Generation ${selectedAbilityGen}`}.</div>`;
+  return `
+    <section class="pokedex-card stats-card ability-pokedex-section">
+      <div class="section-header"><h2>Ability Dex Entries</h2></div>
+      <div class="pokedex-tabs">${tabs}</div>
+      <div class="pokedex-grid">${content}</div>
+    </section>`;
+}
+
+function renderAbilityPokemonSection(ability) {
+  const rows = ability.pokemon.length
+    ? ability.pokemon.map(({ pokemon, slots }) => `
+        <tr>
+          <td>#${escapeHtml(pokemon.number)}</td>
+          <td><button type="button" class="dex-navigation-link pokemon-navigation-link" data-pokemon-number="${escapeHtml(pokemon.number)}" data-pokemon-name="${escapeHtml(pokemon.name)}">${escapeHtml(pokemon.displayName || pokemon.name)}</button></td>
+          <td><div class="move-learner-types">${pokemon.types.filter(Boolean).map((type) => renderTypeBadge(type, { compact: true })).join('') || '—'}</div></td>
+          <td>${slots.map(escapeHtml).join(', ')}</td>
+        </tr>`).join('')
+    : '<tr><td colspan="4" class="moveset-empty">No Pokémon are listed with this ability.</td></tr>';
+
+  return `
+    <section class="moveset-card stats-card ability-pokemon-card">
+      <div class="section-header"><h2>Pokémon with This Ability</h2></div>
+      <div class="moveset-table-wrap">
+        <table class="moveset-table ability-pokemon-table">
+          <thead><tr><th>Dex #</th><th>Pokémon</th><th>Type</th><th>Slot</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>
+    </section>`;
 }
 
 function renderMoveTypePill(type) {
@@ -2310,26 +2688,44 @@ function applyFilter() {
 }
 
 function renderList(pokemonList) {
-  elements.pokemonList.innerHTML = '';
   elements.listCount.textContent = `${pokemonList.length} available`;
+  const profile = getCurrentProfile();
+  const renderToken = pokemonListRenderToken + 1;
+  pokemonListRenderToken = renderToken;
+  pendingPokemonScroll = false;
+  elements.pokemonList.replaceChildren();
+  const batchSize = 40;
+  let index = 0;
 
-  pokemonList.forEach((pokemon) => {
-    const card = document.createElement('button');
-    card.type = 'button';
-    card.className = 'pokemon-card';
-    const isFavorite = Boolean(getCurrentProfile()?.favorites?.includes(getPokemonKey(pokemon)));
-    card.innerHTML = `<h3>${pokemon.displayName || pokemon.name}${isFavorite ? ' <span class="favorite-star" aria-label="Favorite">★</span>' : ''}</h3><p>#${pokemon.number} • ${pokemon.types.filter(Boolean).join(' / ')}</p>`;
-    card.addEventListener('click', () => selectPokemon(pokemon));
-    if (selectedPokemon && selectedPokemon.group === pokemon.group) {
-      card.classList.add('active');
+  const appendBatch = () => {
+    if (renderToken !== pokemonListRenderToken) return;
+    const batch = pokemonList.slice(index, index + batchSize).map((pokemon) => {
+      const isFavorite = Boolean(profile?.favorites?.includes(getPokemonKey(pokemon)));
+      const active = selectedPokemon?.group === pokemon.group ? ' active' : '';
+      const pokemonIndex = pokemonIndexLookup.get(pokemon);
+      return `<button type="button" class="pokemon-card${active}" data-pokemon-index="${pokemonIndex}"><h3>${pokemon.displayName || pokemon.name}${isFavorite ? ' <span class="favorite-star" aria-label="Favorite">★</span>' : ''}</h3><div class="pokemon-card-meta"><p>#${pokemon.number}</p><div class="pokemon-card-types">${pokemon.types.filter(Boolean).map(renderMoveTypePill).join('')}</div></div></button>`;
+    }).join('');
+    elements.pokemonList.insertAdjacentHTML('beforeend', batch);
+    index += batchSize;
+
+    if (pendingPokemonScroll && elements.pokemonList.querySelector('.pokemon-card.active')) {
+      pendingPokemonScroll = false;
+      scrollToSelected();
     }
-    elements.pokemonList.appendChild(card);
-  });
+    if (index < pokemonList.length) requestAnimationFrame(appendBatch);
+  };
+
+  appendBatch();
 }
 
 function selectPokemon(pokemon) {
   selectedPokemon = pokemon;
-  renderList(filteredPokemon);
+  elements.pokemonList.querySelector('.pokemon-card.active')?.classList.remove('active');
+  const visiblePokemon = filteredPokemon.find((entry) => entry.group === pokemon.group);
+  const visibleIndex = visiblePokemon ? pokemonIndexLookup.get(visiblePokemon) : undefined;
+  if (visibleIndex !== undefined) {
+    elements.pokemonList.querySelector(`[data-pokemon-index="${visibleIndex}"]`)?.classList.add('active');
+  }
   renderDetails(pokemon);
 }
 
@@ -2514,19 +2910,7 @@ function renderDetails(pokemon) {
     });
   });
 
-  elements.details.querySelectorAll('.moveset-tab').forEach((button) => {
-    button.addEventListener('click', () => {
-      selectedMoveCategory = button.dataset.category || 'levelUp';
-      renderDetails(pokemon);
-    });
-  });
-
-  elements.details.querySelectorAll('.move-navigation-link').forEach((button) => {
-    button.addEventListener('click', (event) => {
-      event.stopPropagation();
-      navigateToMove(button.dataset.moveId);
-    });
-  });
+  bindPokemonMovesetControls(elements.details, pokemon);
 
   attachTypeHoverHandlers();
   attachGameHoverHandlers();
@@ -2534,6 +2918,43 @@ function renderDetails(pokemon) {
   attachPopupClickHandler();
   attachMoveHoverHandlers();
   bindStatCalculator(pokemon);
+}
+
+function bindPokemonMovesetControls(container, pokemon) {
+  container.querySelectorAll('.moveset-tab').forEach((button) => {
+    button.addEventListener('click', () => {
+      selectedMoveCategory = button.dataset.category || 'levelUp';
+      renderDetails(pokemon);
+    });
+  });
+
+  container.querySelectorAll('.move-navigation-link').forEach((button) => {
+    button.addEventListener('click', (event) => {
+      event.stopPropagation();
+      navigateToMove(button.dataset.moveId);
+    });
+  });
+}
+
+function refreshPokemonMoveset() {
+  if (!selectedPokemon) return;
+  const currentMoveset = elements.details.querySelector('.moveset-card');
+  if (!currentMoveset) return;
+  const template = document.createElement('template');
+  template.innerHTML = renderMovesetSection(selectedPokemon);
+  const refreshedMoveset = template.content.firstElementChild;
+  if (!refreshedMoveset) return;
+  currentMoveset.replaceWith(refreshedMoveset);
+  bindPokemonMovesetControls(refreshedMoveset, selectedPokemon);
+  attachMoveHoverHandlers();
+}
+
+function refreshPokemonAbilitySection() {
+  if (!selectedPokemon) return;
+  const abilityList = elements.details.querySelector('.ability-list');
+  if (!abilityList) return;
+  abilityList.innerHTML = renderAbilitySection(selectedPokemon.abilities, selectedPokemon.hiddenAbility);
+  attachPopupClickHandler();
 }
 
 const NATURES = {
@@ -2561,16 +2982,16 @@ function renderStatCalculator(pokemon) {
     <section class="stat-calculator">
       <button type="button" class="calculator-toggle" aria-expanded="false">Stat Calculator</button>
       <div class="calculator-content">
-        <div class="calculator-controls">
-        <label>Level <input class="calculator-level" type="number" min="1" max="100" value="50" /></label>
-        <div class="nature-picker">
-          <span class="calculator-label">Nature</span>
-          <button type="button" class="nature-trigger" aria-expanded="false" data-nature="Hardy">${getNatureLabel('Hardy')}</button>
-          <div class="nature-menu" hidden>${natureOptions}</div>
-        </div>
-        <label class="calculator-unlimited-label"><input class="calculator-unlimited" type="checkbox" /> No limit</label>
-        </div>
-        <div class="calculator-stats">${rows}</div>
+          <div class="calculator-controls">
+            <label>Level <input class="calculator-level" type="number" min="1" max="100" value="50" /></label>
+            <div class="nature-picker">
+              <span class="calculator-label">Nature</span>
+              <button type="button" class="nature-trigger" aria-expanded="false" data-nature="Hardy">${getNatureLabel('Hardy')}</button>
+              <div class="nature-menu" hidden>${natureOptions}</div>
+            </div>
+            <label class="calculator-unlimited-label"><input class="calculator-unlimited" type="checkbox" /> No limit</label>
+          </div>
+          <div class="calculator-stats">${rows}</div>
       </div>
     </section>`;
 }
@@ -2580,9 +3001,56 @@ function bindStatCalculator(pokemon) {
   if (!calculator) return;
   const toggle = calculator.querySelector('.calculator-toggle');
   const content = calculator.querySelector('.calculator-content');
+  let contentAnimation = null;
   toggle.addEventListener('click', () => {
-    const open = calculator.classList.toggle('open');
+    const open = !calculator.classList.contains('open');
+    const currentHeight = content.getBoundingClientRect().height;
+    const currentMarginTop = parseFloat(getComputedStyle(content).marginTop) || 0;
+    if (contentAnimation) {
+      content.style.height = `${currentHeight}px`;
+      content.style.marginTop = `${currentMarginTop}px`;
+      content.style.overflow = 'hidden';
+      contentAnimation.cancel();
+      contentAnimation = null;
+    }
+
+    calculator.classList.remove('closing');
     toggle.setAttribute('aria-expanded', String(open));
+
+    if (open) {
+      calculator.classList.add('open');
+    } else {
+      calculator.classList.remove('open');
+      calculator.classList.add('closing');
+    }
+
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (reducedMotion) {
+      if (!open) calculator.classList.remove('closing');
+      content.removeAttribute('style');
+      return;
+    }
+
+    const targetHeight = open ? content.scrollHeight : 0;
+    const targetMarginTop = open ? parseFloat(getComputedStyle(content).marginTop) || 0 : 0;
+    const startHeight = currentHeight || 0;
+    const startMarginTop = currentMarginTop;
+    content.style.overflow = 'hidden';
+    const animation = content.animate(
+      [
+        { height: `${startHeight}px`, marginTop: `${startMarginTop}px` },
+        { height: `${targetHeight}px`, marginTop: `${targetMarginTop}px` }
+      ],
+      { duration: open ? 180 : 240, easing: open ? 'ease-out' : 'ease-in', fill: 'forwards' }
+    );
+    contentAnimation = animation;
+    animation.onfinish = () => {
+      if (contentAnimation !== animation) return;
+      animation.cancel();
+      if (!open) calculator.classList.remove('closing');
+      content.removeAttribute('style');
+      contentAnimation = null;
+    };
   });
 
   const natureTrigger = calculator.querySelector('.nature-trigger');
@@ -2601,13 +3069,6 @@ function bindStatCalculator(pokemon) {
       natureTrigger.setAttribute('aria-expanded', 'false');
       update();
     });
-  });
-
-  document.addEventListener('click', (event) => {
-    if (!natureMenu.hidden && !event.target.closest('.nature-picker')) {
-      natureMenu.hidden = true;
-      natureTrigger.setAttribute('aria-expanded', 'false');
-    }
   });
 
   const clampInput = (input, minimum, maximum) => {
@@ -2659,6 +3120,19 @@ function bindStatCalculator(pokemon) {
   update();
 }
 
+function bindStatCalculatorDismissal() {
+  document.addEventListener('click', (event) => {
+    const calculator = elements.details.querySelector('.stat-calculator');
+    const naturePicker = calculator?.querySelector('.nature-picker');
+    const natureMenu = naturePicker?.querySelector('.nature-menu');
+    const natureTrigger = naturePicker?.querySelector('.nature-trigger');
+    if (!natureMenu || natureMenu.hidden) return;
+    if (event.target instanceof Element && event.target.closest('.nature-picker')) return;
+    natureMenu.hidden = true;
+    natureTrigger.setAttribute('aria-expanded', 'false');
+  });
+}
+
 function renderPersonalTools(item, itemType = 'pokemon') {
   const profile = getCurrentProfile();
   const key = getPersonalToolsKey(item, itemType);
@@ -2699,8 +3173,17 @@ function refreshMovePersonalTools(move) {
   bindPersonalToolHandlers(move, elements.moveDetails, 'move');
 }
 
+function refreshAbilityPersonalTools(ability) {
+  const currentTools = elements.abilityDetails.querySelector('.personal-tools');
+  if (!currentTools) return;
+  currentTools.outerHTML = renderPersonalTools(ability, 'ability');
+  bindPersonalToolHandlers(ability, elements.abilityDetails, 'ability');
+}
+
 function getPersonalToolsKey(item, itemType) {
-  return itemType === 'move' ? `move|${item.id}` : getPokemonKey(item);
+  if (itemType === 'move') return `move|${item.id}`;
+  if (itemType === 'ability') return `ability|${normalizePokemonName(item.name)}`;
+  return getPokemonKey(item);
 }
 
 function bindPersonalToolHandlers(item, container, itemType = 'pokemon') {
@@ -2722,7 +3205,8 @@ function bindPersonalToolHandlers(item, container, itemType = 'pokemon') {
     favoriteButton.classList.toggle('active', isFavorite);
     favoriteButton.textContent = isFavorite ? '★ Favorited' : '☆ Favorite';
     if (itemType === 'pokemon') applyFilter();
-    else applyMoveFilters();
+    else if (itemType === 'move') applyMoveFilters();
+    else applyAbilityFilters();
   });
 
   container.querySelector('.save-note-button')?.addEventListener('click', () => {
@@ -2735,7 +3219,8 @@ function bindPersonalToolHandlers(item, container, itemType = 'pokemon') {
     else delete profile.notes[key];
     saveProfiles(profiles);
     if (itemType === 'pokemon') applyFilter();
-    else applyMoveFilters();
+    else if (itemType === 'move') applyMoveFilters();
+    else applyAbilityFilters();
     const message = container.querySelector('.note-saved-message');
     if (message) message.textContent = 'Saved';
   });
@@ -2941,8 +3426,8 @@ function renderMovesetSection(pokemon) {
           }
 
           const moveName = escapeHtml(move.name || moveId);
-          const moveType = escapeHtml(move.type || '—');
-          const moveCategory = escapeHtml(move.category || '—');
+          const moveType = move.type ? renderMoveTypePill(move.type) : '—';
+          const moveCategory = move.category ? renderMoveCategoryBadge(move.category) : '—';
           const movePP = escapeHtml(move.pp || '—');
           const movePower = escapeHtml(move.power || '—');
           const moveAccuracy = escapeHtml(move.accuracy || '—');
@@ -3016,12 +3501,37 @@ function escapeHtml(text) {
 }
 
 function scrollToSelected() {
-  const list = elements.pokemonList;
+  if (!elements.pokemonList.querySelector('.pokemon-card.active')) {
+    pendingPokemonScroll = true;
+    return;
+  }
+  scrollSelectedListItem(elements.pokemonList);
+}
+
+function scrollToSelectedDexEntry(dex) {
+  const list = {
+    pokemon: elements.pokemonList,
+    move: elements.moveList,
+    ability: elements.abilityList
+  }[dex];
+  scrollSelectedListItem(list);
+}
+
+function scrollSelectedListItem(list) {
   const selectedCard = list?.querySelector('.pokemon-card.active');
   if (!list || !selectedCard) return;
 
-  const targetTop = selectedCard.offsetTop - (list.clientHeight - selectedCard.offsetHeight) / 2;
-  list.scrollTo({ top: Math.max(0, targetTop), behavior: 'smooth' });
+  const listRect = list.getBoundingClientRect();
+  const cardRect = selectedCard.getBoundingClientRect();
+  const targetTop = list.scrollTop
+    + cardRect.top - listRect.top
+    - (list.clientHeight - selectedCard.offsetHeight) / 2;
+  const maxScrollTop = list.scrollHeight - list.clientHeight;
+  const boundedTarget = Math.max(0, Math.min(maxScrollTop, targetTop));
+  list.scrollTo({
+    top: boundedTarget,
+    behavior: 'smooth'
+  });
 }
 
 // --- Type and move popup helpers ---
@@ -3155,8 +3665,7 @@ function showGamePopup(gameName, gameColor, clientX, clientY, targetElement) {
   }
 }
 
-function attachTypeHoverHandlers() {
-  const container = elements.details;
+function attachTypeHoverHandlers(container = elements.details) {
   if (!container) return;
 
   container.querySelectorAll('.type-pill-button').forEach((button) => {
@@ -3207,8 +3716,7 @@ function attachGameHoverHandlers() {
   });
 }
 
-function attachPopupClickHandler() {
-  const container = elements.details;
+function attachPopupClickHandler(container = elements.details) {
   if (!container) return;
 
   container.querySelectorAll('.ability-box').forEach((button) => {
