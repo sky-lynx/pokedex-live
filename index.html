@@ -23,6 +23,7 @@
           <button id="pokedexTab" class="dex-tab active" type="button" role="tab" aria-selected="true" aria-controls="pokedexView">PokéDex</button>
           <button id="movedexTab" class="dex-tab" type="button" role="tab" aria-selected="false" aria-controls="movedexView">MoveDex</button>
           <button id="abilitydexTab" class="dex-tab" type="button" role="tab" aria-selected="false" aria-controls="abilitydexView">AbilityDex</button>
+          <button id="teamBuilderTab" class="dex-tab" type="button" role="tab" aria-selected="false" aria-controls="teamBuilderView">Team Builder</button>
         </div>
         <div id="status" class="status-message">Loading sheet data...</div>
       </div>
@@ -261,6 +262,14 @@
           <div id="abilityFilterPanels">
             <div id="abilityPanel-custom" class="filter-panel">
               <div class="custom-filter-section">
+                <h3>Ability Slot</h3>
+                <div class="generation-grid custom-filter-grid">
+                  <button type="button" class="generation-button ability-slot-filter active" data-ability-slot="any">Any</button>
+                  <button type="button" class="generation-button ability-slot-filter" data-ability-slot="Regular">Regular</button>
+                  <button type="button" class="generation-button ability-slot-filter" data-ability-slot="Hidden">Hidden</button>
+                </div>
+              </div>
+              <div class="custom-filter-section">
                 <h3>Favorites</h3>
                 <div class="generation-grid custom-filter-grid">
                   <button type="button" class="generation-button custom-filter-button active" data-ability-custom-group="favorites" data-ability-custom-filter="any">Any</button>
@@ -286,6 +295,35 @@
           <h2>Ability details will appear here</h2>
           <p>Choose an ability from the list.</p>
         </div>
+      </section>
+    </main>
+
+    <main id="teamBuilderView" class="layout team-builder-view" hidden>
+      <aside class="panel panel-left">
+        <section class="list-card">
+          <div class="search-row">
+            <label for="teamPokemonSearch">Find Pokémon</label>
+            <input id="teamPokemonSearch" type="search" placeholder="Search by name, number, or type..." autocomplete="off" />
+          </div>
+          <div class="section-header">
+            <h2>Pokémon</h2>
+            <span id="teamPokemonCount" class="small">0 available</span>
+          </div>
+          <div id="teamPokemonList" class="pokemon-list team-pokemon-list"></div>
+        </section>
+      </aside>
+      <section class="panel panel-right">
+        <section class="stats-card team-roster-card">
+          <div class="section-header">
+            <div><h2>My Team</h2><span id="teamCount" class="small">0 / 6 Pokémon</span></div>
+            <button id="clearTeamButton" type="button" class="filters-button">Clear team</button>
+          </div>
+          <div id="teamRoster" class="team-roster"></div>
+        </section>
+        <section class="stats-card team-analysis-card">
+          <div class="section-header"><h2>Team Analysis</h2></div>
+          <div id="teamAnalysis" class="team-analysis"></div>
+        </section>
       </section>
     </main>
   </div>
