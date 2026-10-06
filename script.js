@@ -114,6 +114,7 @@ let pokemonListRenderToken = 0;
 let pendingPokemonScroll = false;
 let activeType = null;
 let selectedPokemon = null;
+let selectedPokemonDetailTab = 'basic';
 let selectedDex = 'pokemon';
 let selectedPokedexGen = 1;
 let selectedMoveCategory = 'levelUp';
@@ -140,6 +141,9 @@ let moveDescriptionsLookup = {};
 let moveDescriptionGamesets = [];
 let selectedMove = null;
 let selectedAbility = null;
+let selectedMoveDetailTab = 'basic';
+let selectedAbilityDetailTab = 'basic';
+let selectedTeamAnalysisTab = 'defensive';
 let selectedAbilityGen = 3;
 let abilityDescriptionGamesets = [];
 let selectedMoveTypes = new Set();
@@ -284,10 +288,6 @@ async function initialize() {
     });
     resetMoveRangeFilters();
     updateMoveFilterButtons();
-    applyMoveFilters();
-  });
-  document.getElementById('clearMoveStatsButton')?.addEventListener('click', () => {
-    resetMoveRangeFilters();
     applyMoveFilters();
   });
   document.querySelectorAll('#abilityPanel-custom .custom-filter-button').forEach((button) => {
@@ -1585,7 +1585,7 @@ function buildMoveLearnersLookup(pokemonList) {
 function renderMoveFilters() {
   const types = [...new Set(allMoves.map((move) => move.type).filter(Boolean))].sort();
   elements.moveTypeButtons.innerHTML = ['any', ...types].map((type) => {
-    const label = type === 'any' ? 'Any type' : type;
+    const label = type === 'any' ? 'Any' : type;
     const color = TYPE_COLORS[type] || '#334155';
     const selected = selectedMoveTypes.has(type);
     const active = type === 'any' ? selectedMoveTypes.size === 0 : selected;
@@ -2041,10 +2041,6 @@ function getTeamDefensiveMatchups(team) {
 }
 
 function renderTeamAnalysis(team) {
-  if (!team.length) {
-    elements.teamAnalysis.innerHTML = '<p class="small team-empty-message">Add Pokémon to see team type coverage and defensive matchups.</p>';
-    return;
-  }
   const representedTypes = [...new Set(team.flatMap((pokemon) => pokemon.types.filter(Boolean)))];
   const matchups = getTeamDefensiveMatchups(team);
   const sharedWeaknesses = matchups.filter(({ weak }) => weak.length > 1);
@@ -2064,40 +2060,51 @@ function renderTeamAnalysis(team) {
     moves: selectedMoves.filter((move) => getTypeMultiplier(move.type, defendingType) > 1)
   }));
   elements.teamAnalysis.innerHTML = `
-    <section class="team-coverage">
-      <h3>Types represented</h3>
-      <div class="team-coverage-types">${representedTypes.map(renderMoveTypePill).join('') || '—'}</div>
+    <div class="section-tabs" role="tablist" aria-label="Team analysis" data-content-tab-group="team">
+      <button type="button" class="section-tab${selectedTeamAnalysisTab === 'defensive' ? ' active' : ''}" role="tab" aria-selected="${selectedTeamAnalysisTab === 'defensive'}" aria-controls="team-analysis-panel-defensive" tabindex="${selectedTeamAnalysisTab === 'defensive' ? '0' : '-1'}" data-content-tab="defensive">Defensive</button>
+      <button type="button" class="section-tab${selectedTeamAnalysisTab === 'offensive' ? ' active' : ''}" role="tab" aria-selected="${selectedTeamAnalysisTab === 'offensive'}" aria-controls="team-analysis-panel-offensive" tabindex="${selectedTeamAnalysisTab === 'offensive' ? '0' : '-1'}" data-content-tab="offensive">Offensive</button>
+    </div>
+    <section id="team-analysis-panel-defensive" class="content-tab-panel${selectedTeamAnalysisTab === 'defensive' ? ' active' : ''}" role="tabpanel" data-content-panel="defensive"${selectedTeamAnalysisTab === 'defensive' ? '' : ' hidden'}>
+      ${team.length ? `
+        <section class="team-coverage">
+          <h3>Types represented</h3>
+          <div class="team-coverage-types">${representedTypes.map(renderMoveTypePill).join('') || '—'}</div>
+        </section>
+        <section class="team-matchups">
+          <h3>Defensive matchups</h3>
+          <p class="team-analysis-summary">${sharedWeaknesses.length
+            ? `${sharedWeaknesses.length} shared weakness${sharedWeaknesses.length === 1 ? '' : 'es'} affect multiple team members.`
+            : 'No attacking type hits multiple team members super effectively.'}</p>
+          ${noDefensiveAnswer.length
+            ? `<p class="team-analysis-note">No team member resists or is immune to: ${noDefensiveAnswer.map(({ attackType }) => escapeHtml(attackType)).join(', ')}.</p>`
+            : '<p class="team-analysis-note">The team has at least one resistance or immunity to every attacking type.</p>'}
+          <div class="team-matchup-list">${matchups.map(({ attackType, weak, resist, immune }) => `
+            <div class="team-matchup-row${weak.length > 1 ? ' has-shared-weakness' : ''}">
+              ${renderMoveTypePill(attackType)}
+              <span class="team-matchup-detail">
+                <span class="team-matchup-stats">${weak.length ? `<span class="team-matchup-weak">Weak ${weak.length}</span>` : ''}${resist.length ? `<span class="team-matchup-resist">Resist ${resist.length}</span>` : ''}${immune.length ? `<span class="team-matchup-immune">Immune ${immune.length}</span>` : ''}</span>
+                <span class="team-matchup-members">${weak.length ? `<span class="team-matchup-weak">Weak to: ${weak.map(escapeHtml).join(', ')}</span>` : ''}${resist.length ? `<span class="team-matchup-resist">Resisted by: ${resist.map(escapeHtml).join(', ')}</span>` : ''}${immune.length ? `<span class="team-matchup-immune">Immune: ${immune.map(escapeHtml).join(', ')}</span>` : ''}</span>
+              </span>
+            </div>`).join('')}</div>
+        </section>` : '<p class="small team-empty-message">Add Pokémon to see defensive matchups.</p>'}
     </section>
-    <section class="team-matchups">
-      <h3>Defensive matchups</h3>
-      <p class="team-analysis-summary">${sharedWeaknesses.length
-        ? `${sharedWeaknesses.length} shared weakness${sharedWeaknesses.length === 1 ? '' : 'es'} affect multiple team members.`
-        : 'No attacking type hits multiple team members super effectively.'}</p>
-      ${noDefensiveAnswer.length
-        ? `<p class="team-analysis-note">No team member resists or is immune to: ${noDefensiveAnswer.map(({ attackType }) => escapeHtml(attackType)).join(', ')}.</p>`
-        : '<p class="team-analysis-note">The team has at least one resistance or immunity to every attacking type.</p>'}
-      <div class="team-matchup-list">${matchups.map(({ attackType, weak, resist, immune }) => `
-        <div class="team-matchup-row${weak.length > 1 ? ' has-shared-weakness' : ''}">
-          ${renderMoveTypePill(attackType)}
-          <span class="team-matchup-detail">
-            <span class="team-matchup-stats">${weak.length ? `<span class="team-matchup-weak">Weak ${weak.length}</span>` : ''}${resist.length ? `<span class="team-matchup-resist">Resist ${resist.length}</span>` : ''}${immune.length ? `<span class="team-matchup-immune">Immune ${immune.length}</span>` : ''}</span>
-            <span class="team-matchup-members">${weak.length ? `<span class="team-matchup-weak">Weak to: ${weak.map(escapeHtml).join(', ')}</span>` : ''}${resist.length ? `<span class="team-matchup-resist">Resisted by: ${resist.map(escapeHtml).join(', ')}</span>` : ''}${immune.length ? `<span class="team-matchup-immune">Immune: ${immune.map(escapeHtml).join(', ')}</span>` : ''}</span>
-          </span>
-        </div>`).join('')}</div>
+    <section id="team-analysis-panel-offensive" class="content-tab-panel${selectedTeamAnalysisTab === 'offensive' ? ' active' : ''}" role="tabpanel" data-content-panel="offensive"${selectedTeamAnalysisTab === 'offensive' ? '' : ' hidden'}>
+      ${team.length ? `
+        <section class="team-offense">
+          <h3>Offensive coverage</h3>
+          <p class="team-analysis-note">${selectedMoves.length
+            ? 'Shows selected moves that deal super-effective damage against each single type.'
+            : 'Choose moves for your team to see super-effective coverage.'}</p>
+          <div class="team-offense-grid">${offensiveCoverage.map(({ defendingType, moves }) => `
+            <div class="team-offense-row${moves.length ? ' is-covered' : ''}">
+              ${renderMoveTypePill(defendingType)}
+              <span>${moves.length ? moves.map((move) => `${escapeHtml(move.name)} <small>(${escapeHtml(move.pokemonName)})</small>`).join(', ') : 'No super-effective move'}</span>
+            </div>`).join('')}</div>
+        </section>` : '<p class="small team-empty-message">Add Pokémon and plan moves to see offensive coverage.</p>'}
     </section>`;
-  const offenseSection = `
-    <section class="team-offense">
-      <h3>Offensive coverage</h3>
-      <p class="team-analysis-note">${selectedMoves.length
-        ? 'Shows selected moves that deal super-effective damage against each single type.'
-        : 'Choose moves for your team to see super-effective coverage.'}</p>
-      <div class="team-offense-grid">${offensiveCoverage.map(({ defendingType, moves }) => `
-        <div class="team-offense-row${moves.length ? ' is-covered' : ''}">
-          ${renderMoveTypePill(defendingType)}
-          <span>${moves.length ? moves.map((move) => `${escapeHtml(move.name)} <small>(${escapeHtml(move.pokemonName)})</small>`).join(', ') : 'No super-effective move'}</span>
-        </div>`).join('')}</div>
-    </section>`;
-  elements.teamAnalysis.insertAdjacentHTML('beforeend', offenseSection);
+  bindContentTabs(elements.teamAnalysis, 'team', (key) => {
+    selectedTeamAnalysisTab = key;
+  });
 }
 
 function renderTeamBuilder(options = {}) {
@@ -2187,24 +2194,37 @@ function renderMoveDetails(move) {
   elements.moveDetails.classList.remove('details-placeholder');
   elements.moveDetails.innerHTML = `
     <article class="detail-card move-detail-card">
-      <div class="move-detail-heading">
+      <div class="move-detail-heading move-identity-header">
         <h2>${escapeHtml(move.name)}</h2>
         <div class="badges">
           ${renderMoveTypePill(move.type)}
           ${renderMoveCategoryBadge(move.category)}
         </div>
       </div>
+      <div class="section-tabs" role="tablist" aria-label="Move details" data-content-tab-group="move">
+        ${[['basic', 'Basic'], ['entries', 'Dex Entries'], ['learners', 'Pokémon That Learn It']].map(([key, label]) => `
+          <button type="button" class="section-tab${selectedMoveDetailTab === key ? ' active' : ''}" role="tab" aria-selected="${selectedMoveDetailTab === key}" aria-controls="move-panel-${key}" tabindex="${selectedMoveDetailTab === key ? '0' : '-1'}" data-content-tab="${key}">${label}</button>`).join('')}
+      </div>
+      <section id="move-panel-basic" class="content-tab-panel${selectedMoveDetailTab === 'basic' ? ' active' : ''}" role="tabpanel" data-content-panel="basic"${selectedMoveDetailTab === 'basic' ? '' : ' hidden'}>
       ${renderPersonalTools(move, 'move')}
       <div class="move-overview-grid">
         <section class="move-stat-grid" aria-label="Move stats">${statHtml}</section>
         ${renderMoveTarget(move.target)}
       </div>
-      ${renderMovePokedexSection(move)}
       ${effects.length ? `<section class="move-effects-section"><h2>Battle Effects</h2>${effects.map(([label, value]) => `<p><strong>${escapeHtml(label)}:</strong> ${escapeHtml(value)}</p>`).join('')}</section>` : ''}
+      </section>
+      <section id="move-panel-entries" class="content-tab-panel${selectedMoveDetailTab === 'entries' ? ' active' : ''}" role="tabpanel" data-content-panel="entries"${selectedMoveDetailTab === 'entries' ? '' : ' hidden'}>
+      ${renderMovePokedexSection(move)}
+      </section>
+      <section id="move-panel-learners" class="content-tab-panel${selectedMoveDetailTab === 'learners' ? ' active' : ''}" role="tabpanel" data-content-panel="learners"${selectedMoveDetailTab === 'learners' ? '' : ' hidden'}>
       ${renderMoveLearnersSection(move)}
+      </section>
     </article>`;
 
   bindPersonalToolHandlers(move, elements.moveDetails, 'move');
+  bindContentTabs(elements.moveDetails, 'move', (key) => {
+    selectedMoveDetailTab = key;
+  });
   elements.moveDetails.querySelectorAll('.move-pokedex-tab').forEach((button) => {
     button.addEventListener('click', () => {
       selectedMoveGen = button.dataset.gameset || Number(button.dataset.generation);
@@ -2228,15 +2248,28 @@ function renderAbilityDetails(ability) {
   elements.abilityDetails.classList.remove('details-placeholder');
   elements.abilityDetails.innerHTML = `
     <article class="detail-card move-detail-card ability-detail-card">
-      <div class="move-detail-heading">
+      <div class="move-detail-heading move-identity-header">
         <h2>${escapeHtml(ability.name)}</h2>
       </div>
+      <div class="section-tabs" role="tablist" aria-label="Ability details" data-content-tab-group="ability">
+        ${[['basic', 'Basic'], ['entries', 'Dex Entries'], ['pokemon', 'Pokémon That Have It']].map(([key, label]) => `
+          <button type="button" class="section-tab${selectedAbilityDetailTab === key ? ' active' : ''}" role="tab" aria-selected="${selectedAbilityDetailTab === key}" aria-controls="ability-panel-${key}" tabindex="${selectedAbilityDetailTab === key ? '0' : '-1'}" data-content-tab="${key}">${label}</button>`).join('')}
+      </div>
+      <section id="ability-panel-basic" class="content-tab-panel${selectedAbilityDetailTab === 'basic' ? ' active' : ''}" role="tabpanel" data-content-panel="basic"${selectedAbilityDetailTab === 'basic' ? '' : ' hidden'}>
       ${renderPersonalTools(ability, 'ability')}
+      </section>
+      <section id="ability-panel-entries" class="content-tab-panel${selectedAbilityDetailTab === 'entries' ? ' active' : ''}" role="tabpanel" data-content-panel="entries"${selectedAbilityDetailTab === 'entries' ? '' : ' hidden'}>
       ${renderAbilityEntriesSection(ability)}
+      </section>
+      <section id="ability-panel-pokemon" class="content-tab-panel${selectedAbilityDetailTab === 'pokemon' ? ' active' : ''}" role="tabpanel" data-content-panel="pokemon"${selectedAbilityDetailTab === 'pokemon' ? '' : ' hidden'}>
       ${renderAbilityPokemonSection(ability)}
+      </section>
     </article>`;
 
   bindPersonalToolHandlers(ability, elements.abilityDetails, 'ability');
+  bindContentTabs(elements.abilityDetails, 'ability', (key) => {
+    selectedAbilityDetailTab = key;
+  });
   elements.abilityDetails.querySelectorAll('.ability-dex-tab').forEach((button) => {
     button.addEventListener('click', () => {
       selectedAbilityGen = button.dataset.generation === 'CHA' ? 'CHA' : Number(button.dataset.generation);
@@ -2697,7 +2730,7 @@ function renderTypeFilters(pokemonList) {
   const allButton = document.createElement('button');
   allButton.type = 'button';
   allButton.className = 'type-button active';
-  allButton.textContent = 'All Types';
+  allButton.textContent = 'All';
   allButton.addEventListener('click', () => {
     document.querySelectorAll('#typeButtons .type-button').forEach((btn) => btn.classList.remove('selected'));
     document.querySelectorAll('#typeButtons .type-button').forEach((btn) => btn.classList.remove('active'));
@@ -3404,17 +3437,30 @@ function renderDetails(pokemon) {
         <button type="button" class="mobile-back-button">Back to list</button>
         <strong>#${escapeHtml(pokemon.number)} ${escapeHtml(pokemon.name)}</strong>
       </nav>
-      <div class="detail-header">
-        ${formSwitcher}
+      <div class="pokemon-identity-header">
         <div class="title-block">
-          <div>
-            <div class="dex-label" style="text-align: left;">#${pokemon.number}</div>
+          <div class="detail-title-copy">
+            <div class="detail-title-line">
+              <div class="dex-label" style="text-align: left;">#${pokemon.number}</div>
+              ${formSwitcher}
+            </div>
             <h2 style="text-align: left;">${pokemon.name}</h2>
             <p class="text-muted" style="text-align: left;">${pokemon.classification}</p>
           </div>
           <div class="badges">${typesHtml}</div>
         </div>
-
+      </div>
+      <div class="pokemon-detail-tabs" role="tablist" aria-label="Pokémon details">
+        ${[
+          ['basic', 'Basic'],
+          ['stats', 'Stats'],
+          ['availability', 'Availability'],
+          ['entries', 'Dex Entries'],
+          ['moveset', 'Moveset']
+        ].map(([key, label]) => `<button type="button" id="pokemon-tab-${key}" class="pokemon-detail-tab${selectedPokemonDetailTab === key ? ' active' : ''}" role="tab" aria-selected="${selectedPokemonDetailTab === key}" aria-controls="pokemon-panel-${key}" tabindex="${selectedPokemonDetailTab === key ? '0' : '-1'}" data-pokemon-detail-tab="${key}">${label}</button>`).join('')}
+      </div>
+      <section id="pokemon-panel-basic" class="pokemon-detail-panel${selectedPokemonDetailTab === 'basic' ? ' active' : ''}" role="tabpanel" aria-labelledby="pokemon-tab-basic" data-pokemon-detail-panel="basic"${selectedPokemonDetailTab === 'basic' ? '' : ' hidden'}>
+      <div class="detail-header">
         ${renderPersonalTools(pokemon)}
 
         <div class="ability-section">
@@ -3453,6 +3499,29 @@ function renderDetails(pokemon) {
       </div>
 
       ${renderEvolutionSection(pokemon)}
+      <section class="effectiveness-card stats-card">
+        <div class="section-header">
+          <h2>Type Effectiveness</h2>
+        </div>
+        <table class="type-table">
+          <thead>
+            <tr><th></th>${pokemon.effectiveness.map((item) => `<th>${renderTypeBadge(String(item.type || ''), { compact: true })}</th>`).join('')}</tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="type-stack-cell">
+                <div class="type-stack">
+                  ${pokemon.types.map((type) => renderTypeBadge(type, { compact: true })).join('')}
+                </div>
+              </td>
+              ${pokemon.effectiveness.map((item) => `<td>${item.value || '—'}</td>`).join('')}
+            </tr>
+          </tbody>
+        </table>
+      </section>
+      </section>
+
+      <section id="pokemon-panel-stats" class="pokemon-detail-panel${selectedPokemonDetailTab === 'stats' ? ' active' : ''}" role="tabpanel" aria-labelledby="pokemon-tab-stats" data-pokemon-detail-panel="stats"${selectedPokemonDetailTab === 'stats' ? '' : ' hidden'}>
       ${renderStatCalculator(pokemon)}
 
       <div class="stats-row">
@@ -3496,28 +3565,9 @@ function renderDetails(pokemon) {
         </div>
         ${renderGenderBar(pokemon.gender)}
       </section>
-
-      <section class="effectiveness-card stats-card">
-        <div class="section-header">
-          <h2>Type Effectiveness</h2>
-        </div>
-        <table class="type-table">
-          <thead>
-            <tr><th></th>${pokemon.effectiveness.map((item) => `<th>${renderTypeBadge(String(item.type || ''), { compact: true })}</th>`).join('')}</tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td class="type-stack-cell">
-                <div class="type-stack">
-                  ${pokemon.types.map((type) => renderTypeBadge(type, { compact: true })).join('')}
-                </div>
-              </td>
-              ${pokemon.effectiveness.map((item) => `<td>${item.value || '—'}</td>`).join('')}
-            </tr>
-          </tbody>
-        </table>
       </section>
 
+      <section id="pokemon-panel-availability" class="pokemon-detail-panel${selectedPokemonDetailTab === 'availability' ? ' active' : ''}" role="tabpanel" aria-labelledby="pokemon-tab-availability" data-pokemon-detail-panel="availability"${selectedPokemonDetailTab === 'availability' ? '' : ' hidden'}>
       <section class="availability-card stats-card">
         <div class="section-header">
           <h2>Game Availability</h2>
@@ -3541,9 +3591,15 @@ function renderDetails(pokemon) {
             .join('')}
         </div>
       </section>
+      </section>
 
+      <section id="pokemon-panel-entries" class="pokemon-detail-panel${selectedPokemonDetailTab === 'entries' ? ' active' : ''}" role="tabpanel" aria-labelledby="pokemon-tab-entries" data-pokemon-detail-panel="entries"${selectedPokemonDetailTab === 'entries' ? '' : ' hidden'}>
       ${renderPokedexSection(pokemon)}
+      </section>
+
+      <section id="pokemon-panel-moveset" class="pokemon-detail-panel${selectedPokemonDetailTab === 'moveset' ? ' active' : ''}" role="tabpanel" aria-labelledby="pokemon-tab-moveset" data-pokemon-detail-panel="moveset"${selectedPokemonDetailTab === 'moveset' ? '' : ' hidden'}>
       ${renderMovesetSection(pokemon)}
+      </section>
     </div>
   `;
 
@@ -3553,6 +3609,7 @@ function renderDetails(pokemon) {
   });
 
   bindPersonalToolHandlers(pokemon, elements.details);
+  bindPokemonDetailTabs(elements.details);
 
   elements.details.querySelectorAll('[data-evolution-pokemon-key]').forEach((button) => {
     button.addEventListener('click', () => {
@@ -3585,6 +3642,79 @@ function renderDetails(pokemon) {
   attachPopupClickHandler();
   attachMoveHoverHandlers();
   bindStatCalculator(pokemon);
+}
+
+function bindContentTabs(container, group, onSelect) {
+  const tabList = container.querySelector(`[data-content-tab-group="${group}"]`);
+  if (!tabList) return;
+  const tabs = [...tabList.querySelectorAll('[data-content-tab]')];
+  const panels = [...container.querySelectorAll('[data-content-panel]')];
+  const activateTab = (tab) => {
+    const selectedKey = tab.dataset.contentTab;
+    if (!selectedKey) return;
+    onSelect(selectedKey);
+    tabs.forEach((item) => {
+      const isSelected = item === tab;
+      item.classList.toggle('active', isSelected);
+      item.setAttribute('aria-selected', String(isSelected));
+      item.tabIndex = isSelected ? 0 : -1;
+    });
+    panels.forEach((panel) => {
+      const isSelected = panel.dataset.contentPanel === selectedKey;
+      panel.hidden = !isSelected;
+      panel.classList.toggle('active', isSelected);
+    });
+  };
+
+  tabs.forEach((tab) => {
+    tab.addEventListener('click', () => activateTab(tab));
+    tab.addEventListener('keydown', (event) => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+      event.preventDefault();
+      const index = tabs.indexOf(tab);
+      const nextIndex = event.key === 'Home'
+        ? 0
+        : event.key === 'End'
+          ? tabs.length - 1
+          : (index + (event.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length;
+      activateTab(tabs[nextIndex]);
+      tabs[nextIndex].focus();
+    });
+  });
+}
+
+function bindPokemonDetailTabs(container) {
+  const tabs = [...container.querySelectorAll('[data-pokemon-detail-tab]')];
+  const activateTab = (tab) => {
+    const selectedKey = tab.dataset.pokemonDetailTab;
+    if (!selectedKey) return;
+    selectedPokemonDetailTab = selectedKey;
+    tabs.forEach((item) => {
+      const isSelected = item === tab;
+      item.classList.toggle('active', isSelected);
+      item.setAttribute('aria-selected', String(isSelected));
+      item.tabIndex = isSelected ? 0 : -1;
+    });
+    container.querySelectorAll('[data-pokemon-detail-panel]').forEach((panel) => {
+      panel.hidden = panel.dataset.pokemonDetailPanel !== selectedKey;
+    });
+  };
+
+  tabs.forEach((tab) => {
+    tab.addEventListener('click', () => activateTab(tab));
+    tab.addEventListener('keydown', (event) => {
+      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+      event.preventDefault();
+      const index = tabs.indexOf(tab);
+      const nextIndex = event.key === 'Home'
+        ? 0
+        : event.key === 'End'
+          ? tabs.length - 1
+          : (index + (event.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length;
+      activateTab(tabs[nextIndex]);
+      tabs[nextIndex].focus();
+    });
+  });
 }
 
 function bindPokemonMovesetControls(container, pokemon) {
