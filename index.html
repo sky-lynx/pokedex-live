@@ -24,6 +24,7 @@
           <button id="movedexTab" class="dex-tab" type="button" role="tab" aria-selected="false" aria-controls="movedexView">MoveDex</button>
           <button id="abilitydexTab" class="dex-tab" type="button" role="tab" aria-selected="false" aria-controls="abilitydexView">AbilityDex</button>
           <button id="teamBuilderTab" class="dex-tab" type="button" role="tab" aria-selected="false" aria-controls="teamBuilderView">Team Builder</button>
+          <button id="pokemonCompareTab" class="dex-tab" type="button" role="tab" aria-selected="false" aria-controls="pokemonCompareView">Compare</button>
         </div>
         <div id="status" class="status-message">Loading sheet data...</div>
       </div>
@@ -50,20 +51,26 @@
             <button id="clearFiltersButton" type="button" class="filters-button">Clear filters</button>
           </div>
 
-          <div class="filter-tabs" role="tablist">
-            <button type="button" class="filter-tab active" data-panel="type">Type</button>
-            <button type="button" class="filter-tab" data-panel="typing">Typing</button>
-            <button type="button" class="filter-tab" data-panel="generation">Gen</button>
-            <button type="button" class="filter-tab" data-panel="baseStats">Base Stats</button>
-            <button type="button" class="filter-tab" data-panel="yields">Yields</button>
-            <button type="button" class="filter-tab" data-panel="extra">Extra</button>
-            <button type="button" class="filter-tab" data-panel="shape">Shape</button>
-            <button type="button" class="filter-tab" data-panel="color">Color</button>
-            <button type="button" class="filter-tab" data-panel="eggGroup">Egg Group</button>
-            <button type="button" class="filter-tab" data-panel="custom">Custom</button>
+          <div class="filter-mode-tabs" role="tablist" aria-label="Filter and sort">
+            <button type="button" class="filter-mode-tab active" role="tab" aria-selected="true" aria-controls="filterModePanel-filters" data-filter-mode="filters">Filters</button>
+            <button type="button" class="filter-mode-tab" role="tab" aria-selected="false" aria-controls="filterModePanel-sort" data-filter-mode="sort">Sort</button>
           </div>
 
-          <div id="filterPanels">
+          <section id="filterModePanel-filters" class="filter-mode-panel" role="tabpanel">
+            <div class="filter-tabs" role="tablist" aria-label="Pokémon filters">
+              <button type="button" class="filter-tab active" data-panel="type">Type</button>
+              <button type="button" class="filter-tab" data-panel="typing">Typing</button>
+              <button type="button" class="filter-tab" data-panel="generation">Gen</button>
+              <button type="button" class="filter-tab" data-panel="baseStats">Base Stats</button>
+              <button type="button" class="filter-tab" data-panel="yields">Yields</button>
+              <button type="button" class="filter-tab" data-panel="extra">Extra</button>
+              <button type="button" class="filter-tab" data-panel="shape">Shape</button>
+              <button type="button" class="filter-tab" data-panel="color">Color</button>
+              <button type="button" class="filter-tab" data-panel="eggGroup">Egg Group</button>
+              <button type="button" class="filter-tab" data-panel="custom">Custom</button>
+            </div>
+
+            <div id="filterPanels">
             <div id="panel-type" class="filter-panel">
               <div class="logic-toggle">
                 <button id="logicAnd" type="button" class="button">AND</button>
@@ -152,7 +159,61 @@
                 </div>
               </div>
             </div>
-          </div>
+            </div>
+          </section>
+
+          <section id="filterModePanel-sort" class="filter-mode-panel sort-panel" role="tabpanel" hidden>
+            <div class="sort-direction-controls" role="group" aria-label="Sort direction">
+              <button type="button" class="sort-direction-button active" data-sort-direction="none" aria-pressed="true">None</button>
+              <button type="button" class="sort-direction-button" data-sort-direction="asc" aria-pressed="false">Ascending</button>
+              <button type="button" class="sort-direction-button" data-sort-direction="desc" aria-pressed="false">Descending</button>
+            </div>
+            <div class="sort-option-section">
+              <h3>General</h3>
+              <div class="generation-grid sort-option-grid">
+                <button type="button" class="generation-button sort-option" data-sort-key="dex" aria-pressed="false">Dex number</button>
+                <button type="button" class="generation-button sort-option" data-sort-key="height" aria-pressed="false">Height (m)</button>
+                <button type="button" class="generation-button sort-option" data-sort-key="weight" aria-pressed="false">Weight (kg)</button>
+              </div>
+            </div>
+            <div class="sort-option-section">
+              <h3>Attributes</h3>
+              <div class="generation-grid sort-option-grid">
+                <button type="button" class="generation-button sort-option" data-sort-key="shape" aria-pressed="false">Shape</button>
+                <button type="button" class="generation-button sort-option" data-sort-key="color" aria-pressed="false">Color</button>
+              </div>
+            </div>
+            <div class="sort-option-section">
+              <h3>Base stats</h3>
+              <div class="generation-grid sort-option-grid">
+                <button type="button" class="generation-button sort-option" data-sort-key="base:HP" aria-pressed="false">HP</button>
+                <button type="button" class="generation-button sort-option" data-sort-key="base:ATK" aria-pressed="false">Attack</button>
+                <button type="button" class="generation-button sort-option" data-sort-key="base:DEF" aria-pressed="false">Defense</button>
+                <button type="button" class="generation-button sort-option" data-sort-key="base:SpA" aria-pressed="false">Special Attack</button>
+                <button type="button" class="generation-button sort-option" data-sort-key="base:SpD" aria-pressed="false">Special Defense</button>
+                <button type="button" class="generation-button sort-option" data-sort-key="base:SPE" aria-pressed="false">Speed</button>
+                <button type="button" class="generation-button sort-option" data-sort-key="base:TOTAL" aria-pressed="false">Total</button>
+              </div>
+            </div>
+            <div class="sort-option-section">
+              <h3>EV yield</h3>
+              <div class="generation-grid sort-option-grid">
+                <button type="button" class="generation-button sort-option" data-sort-key="ev:HP" aria-pressed="false">HP</button>
+                <button type="button" class="generation-button sort-option" data-sort-key="ev:ATK" aria-pressed="false">Attack</button>
+                <button type="button" class="generation-button sort-option" data-sort-key="ev:DEF" aria-pressed="false">Defense</button>
+                <button type="button" class="generation-button sort-option" data-sort-key="ev:SpA" aria-pressed="false">Special Attack</button>
+                <button type="button" class="generation-button sort-option" data-sort-key="ev:SpD" aria-pressed="false">Special Defense</button>
+                <button type="button" class="generation-button sort-option" data-sort-key="ev:SPE" aria-pressed="false">Speed</button>
+              </div>
+            </div>
+            <div class="sort-option-section">
+              <h3>Other</h3>
+              <div class="generation-grid sort-option-grid">
+                <button type="button" class="generation-button sort-option" data-sort-key="friendship" aria-pressed="false">Base friendship</button>
+                <button type="button" class="generation-button sort-option" data-sort-key="xp" aria-pressed="false">Base XP</button>
+              </div>
+            </div>
+          </section>
         </section>
       </aside>
 
@@ -323,6 +384,32 @@
           <div class="section-header"><h2>Team Analysis</h2></div>
           <div id="teamAnalysis" class="team-analysis"></div>
         </section>
+      </section>
+    </main>
+
+    <main id="pokemonCompareView" class="layout pokemon-compare-view" hidden>
+      <aside class="panel panel-left">
+        <section class="list-card">
+          <div class="search-row">
+            <label for="comparePokemonSearch">Find Pokémon</label>
+            <input id="comparePokemonSearch" type="search" placeholder="Search by name, number, or type..." autocomplete="off" />
+          </div>
+          <div class="section-header">
+            <h2>Pokémon</h2>
+            <span id="comparePokemonCount" class="small">0 available</span>
+          </div>
+          <div id="comparePokemonList" class="pokemon-list team-pokemon-list"></div>
+        </section>
+      </aside>
+      <section class="panel pokemon-compare-panel">
+        <div class="section-header">
+          <div>
+            <h2>Compare Pokémon</h2>
+            <p class="small">Compare base stats, types, abilities, and learnable moves.</p>
+          </div>
+        </div>
+        <div id="pokemonCompareSlots" class="pokemon-compare-slots"></div>
+        <div id="pokemonCompareContent" class="pokemon-compare-content"></div>
       </section>
     </main>
   </div>

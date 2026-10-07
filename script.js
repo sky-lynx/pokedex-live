@@ -103,7 +103,13 @@ const elements = {
   teamPokemonCount: document.getElementById('teamPokemonCount'),
   teamCount: document.getElementById('teamCount'),
   teamRoster: document.getElementById('teamRoster'),
-  teamAnalysis: document.getElementById('teamAnalysis')
+  teamAnalysis: document.getElementById('teamAnalysis'),
+  pokemonCompareView: document.getElementById('pokemonCompareView'),
+  comparePokemonSearch: document.getElementById('comparePokemonSearch'),
+  comparePokemonList: document.getElementById('comparePokemonList'),
+  comparePokemonCount: document.getElementById('comparePokemonCount'),
+  pokemonCompareSlots: document.getElementById('pokemonCompareSlots'),
+  pokemonCompareContent: document.getElementById('pokemonCompareContent')
 };
 
 let allPokemon = [];
@@ -116,6 +122,12 @@ let activeType = null;
 let selectedPokemon = null;
 let selectedPokemonDetailTab = 'basic';
 let selectedDex = 'pokemon';
+let selectedPokemonSortKey = '';
+let selectedPokemonSortDirection = 'none';
+let selectedComparePokemonKeys = ['', '', '', ''];
+let selectedCompareMoveCategory = 'levelUp';
+let selectedCompareDetailTab = 'basic';
+let comparePokemonRenderToken = 0;
 let selectedPokedexGen = 1;
 let selectedMoveCategory = 'levelUp';
 let typingFilterValue = 'any';
@@ -220,6 +232,9 @@ async function initialize() {
     if (filteredPokemon.length) {
       selectPokemon(filteredPokemon[0]);
     }
+    bindPokemonComparisonControls();
+    renderComparePokemonOptions();
+    renderPokemonComparison();
     elements.status.textContent = `Loaded ${allPokemon.length} Pokémon.`;
     pokemonDataLoaded = true;
   } catch (error) {
@@ -520,11 +535,13 @@ function loadMoveDexData() {
     refreshPokemonMoveset();
     initializeDexView('move');
     if (selectedDex === 'team') renderTeamBuilder({ renderOptions: false });
+    if (selectedDex === 'compare') renderPokemonComparison();
   }).catch((error) => {
     moveDexDataPromise = null;
     moveDataLoadFailed = true;
     console.error('Unable to load move data', error);
     elements.status.textContent = `Loaded ${allPokemon.length} Pokémon, but move data could not be loaded.`;
+    if (selectedDex === 'compare') renderPokemonComparison();
   });
   return moveDexDataPromise;
 }
@@ -578,10 +595,12 @@ function bindDexSwitcher() {
   const movedexTab = document.getElementById('movedexTab');
   const abilitydexTab = document.getElementById('abilitydexTab');
   const teamBuilderTab = document.getElementById('teamBuilderTab');
+  const pokemonCompareTab = document.getElementById('pokemonCompareTab');
   pokedexTab.addEventListener('click', () => switchDexView('pokemon'));
   movedexTab.addEventListener('click', () => switchDexView('move'));
   abilitydexTab.addEventListener('click', () => switchDexView('ability'));
   teamBuilderTab.addEventListener('click', () => switchDexView('team'));
+  pokemonCompareTab.addEventListener('click', () => switchDexView('compare'));
 }
 
 function switchDexView(dex) {
@@ -589,13 +608,15 @@ function switchDexView(dex) {
     pokemon: document.getElementById('pokedexView'),
     move: document.getElementById('movedexView'),
     ability: document.getElementById('abilitydexView'),
-    team: document.getElementById('teamBuilderView')
+    team: document.getElementById('teamBuilderView'),
+    compare: elements.pokemonCompareView
   };
   const tabs = {
     pokemon: document.getElementById('pokedexTab'),
     move: document.getElementById('movedexTab'),
     ability: document.getElementById('abilitydexTab'),
-    team: document.getElementById('teamBuilderTab')
+    team: document.getElementById('teamBuilderTab'),
+    compare: document.getElementById('pokemonCompareTab')
   };
   selectedDex = dex;
   Object.entries(views).forEach(([key, view]) => {
@@ -619,7 +640,8 @@ function switchDexView(dex) {
     pokemon: ['PokéDex Live', 'PokéDex Live'],
     move: ['PokéDex Live', 'MoveDex Live'],
     ability: ['PokéDex Live', 'AbilityDex Live'],
-    team: ['PokéDex Live', 'Team Builder']
+    team: ['PokéDex Live', 'Team Builder'],
+    compare: ['PokéDex Live', 'Compare Pokémon']
   };
   document.getElementById('heroEyebrow').textContent = dexTitles[dex][0];
   document.getElementById('heroTitle').textContent = dexTitles[dex][1];
@@ -627,16 +649,25 @@ function switchDexView(dex) {
     pokemon: 'Random Pokémon',
     move: 'Random Move',
     ability: 'Random Ability',
-    team: 'Random Pokémon'
+    team: 'Random Pokémon',
+    compare: 'Random Pokémon'
   };
   elements.randomButton.textContent = randomLabels[dex];
   elements.floatingRandomButton.textContent = randomLabels[dex];
-  elements.randomButton.hidden = dex === 'team';
-  elements.floatingRandomButton.hidden = dex === 'team';
+  const showRandom = dex !== 'team' && dex !== 'compare';
+  elements.randomButton.hidden = !showRandom;
+  elements.floatingRandomButton.hidden = !showRandom;
+  elements.sidebarToggleButton.hidden = dex === 'compare';
+  elements.floatingSidebarButton.hidden = dex === 'compare';
   initializeDexView(dex);
 }
 
 function initializeDexView(dex) {
+  if (dex === 'compare') {
+    renderPokemonComparison();
+    if (!moveDataLoaded) loadMoveDexData();
+    return;
+  }
   if (dex === 'team') {
     renderTeamBuilder();
     if (!moveDataLoaded) loadMoveDexData();
@@ -1905,11 +1936,13 @@ function setTeamMove(pokemonKey, slot, moveId) {
 }
 
 function closeTeamDropdowns() {
-  elements.teamRoster?.querySelectorAll('.team-form-menu, .team-move-menu').forEach((menu) => {
-    menu.hidden = true;
-  });
-  elements.teamRoster?.querySelectorAll('[data-team-form-toggle], [data-team-move-toggle]').forEach((button) => {
-    button.setAttribute('aria-expanded', 'false');
+  [elements.teamRoster, elements.pokemonCompareSlots].forEach((container) => {
+    container?.querySelectorAll('.team-form-menu, .team-move-menu').forEach((menu) => {
+      menu.hidden = true;
+    });
+    container?.querySelectorAll('[data-team-form-toggle], [data-team-move-toggle], [data-compare-form-toggle]').forEach((button) => {
+      button.setAttribute('aria-expanded', 'false');
+    });
   });
 }
 
@@ -2037,6 +2070,428 @@ function getTeamDefensiveMatchups(team) {
       else if (multiplier < 1) resist.push(name);
     });
     return { attackType, weak, resist, immune };
+  });
+}
+
+function bindPokemonComparisonControls() {
+  elements.comparePokemonSearch?.addEventListener('input', renderComparePokemonOptions);
+  elements.comparePokemonList?.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-compare-add]');
+    if (!button) return;
+    addPokemonToComparison(button.dataset.compareAdd);
+  });
+  elements.pokemonCompareSlots?.addEventListener('click', (event) => {
+    const formToggle = event.target.closest('[data-compare-form-toggle]');
+    if (formToggle) {
+      const picker = formToggle.closest('.team-form-picker');
+      const menu = picker?.querySelector('.team-form-menu');
+      const isOpening = Boolean(menu?.hidden);
+      closeTeamDropdowns();
+      if (menu && isOpening) {
+        menu.hidden = false;
+        formToggle.setAttribute('aria-expanded', 'true');
+      }
+      return;
+    }
+    const formOption = event.target.closest('[data-compare-form-slot][data-compare-form-key]');
+    if (formOption) {
+      changeComparisonPokemonForm(Number(formOption.dataset.compareFormSlot), formOption.dataset.compareFormKey);
+      return;
+    }
+    const removeButton = event.target.closest('[data-compare-remove]');
+    if (!removeButton) return;
+    removePokemonFromComparison(Number(removeButton.dataset.compareRemove));
+  });
+  elements.pokemonCompareSlots?.addEventListener('keydown', (event) => {
+    const trigger = event.target.closest('[data-compare-form-toggle]');
+    const option = event.target.closest('.pokemon-compare-form-option');
+    if (event.key === 'Escape' && (trigger || option)) {
+      const picker = (trigger || option).closest('.team-form-picker');
+      const menu = picker?.querySelector('.team-form-menu');
+      const menuTrigger = picker?.querySelector('[data-compare-form-toggle]');
+      if (menu && !menu.hidden) {
+        event.preventDefault();
+        menu.hidden = true;
+        menuTrigger?.setAttribute('aria-expanded', 'false');
+        menuTrigger?.focus();
+      }
+      return;
+    }
+    if (trigger && event.key === 'ArrowDown') {
+      event.preventDefault();
+      if (trigger.getAttribute('aria-expanded') !== 'true') trigger.click();
+      trigger.closest('.team-form-picker')?.querySelector('.pokemon-compare-form-option')?.focus();
+      return;
+    }
+    if (!option || !['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const options = [...option.closest('.team-form-menu').querySelectorAll('.pokemon-compare-form-option')];
+    const currentIndex = options.indexOf(option);
+    const nextIndex = event.key === 'Home'
+      ? 0
+      : event.key === 'End'
+        ? options.length - 1
+        : (currentIndex + (event.key === 'ArrowDown' ? 1 : options.length - 1)) % options.length;
+    options[nextIndex]?.focus();
+  });
+  elements.pokemonCompareContent?.addEventListener('click', (event) => {
+    const moveLink = event.target.closest('.move-navigation-link');
+    if (moveLink) {
+      event.stopPropagation();
+      navigateToMove(moveLink.dataset.moveId);
+      return;
+    }
+    const button = event.target.closest('[data-compare-move-category]');
+    if (!button) return;
+    selectedCompareMoveCategory = button.dataset.compareMoveCategory;
+    renderPokemonComparison();
+  });
+}
+
+function getComparePokemon() {
+  return selectedComparePokemonKeys.map((key) => key ? pokemonByKey.get(key) || null : null);
+}
+
+function addPokemonToComparison(pokemonKey) {
+  const pokemon = pokemonByKey.get(pokemonKey);
+  if (!pokemon) return;
+  if (selectedComparePokemonKeys.some((key) => pokemonByKey.get(key)?.group === pokemon.group)) return;
+  const emptySlot = selectedComparePokemonKeys.indexOf('');
+  if (emptySlot < 0) return;
+  selectedComparePokemonKeys[emptySlot] = pokemonKey;
+  renderPokemonComparison();
+}
+
+function removePokemonFromComparison(slot) {
+  if (!Number.isInteger(slot) || slot < 0 || slot >= selectedComparePokemonKeys.length) return;
+  selectedComparePokemonKeys[slot] = '';
+  renderPokemonComparison();
+}
+
+function changeComparisonPokemonForm(slot, pokemonKey) {
+  if (!Number.isInteger(slot) || slot < 0 || slot >= selectedComparePokemonKeys.length) return;
+  const pokemon = pokemonByKey.get(pokemonKey);
+  const current = pokemonByKey.get(selectedComparePokemonKeys[slot]);
+  if (!pokemon || !current || pokemon.group !== current.group) return;
+  selectedComparePokemonKeys[slot] = pokemonKey;
+  renderPokemonComparison();
+}
+
+function renderComparePokemonOptions() {
+  if (!elements.comparePokemonList || !allPokemon.length) return;
+  const query = String(elements.comparePokemonSearch?.value || '').trim().toLowerCase();
+  const originalPokemon = Object.values(groupsByDex).map((forms) => forms[0]);
+  const matches = originalPokemon.filter((pokemon) => (
+    !query
+    || String(pokemon.number).toLowerCase().includes(query)
+    || String(pokemon.displayName || pokemon.name).toLowerCase().includes(query)
+    || pokemon.name.toLowerCase().includes(query)
+    || pokemon.types.some((type) => type.toLowerCase().includes(query))
+  ));
+  const renderToken = comparePokemonRenderToken + 1;
+  comparePokemonRenderToken = renderToken;
+  elements.comparePokemonCount.textContent = `${matches.length} Pokémon found`;
+  elements.comparePokemonList.replaceChildren();
+  if (!matches.length) {
+    elements.comparePokemonList.innerHTML = '<p class="small team-empty-message">No Pokémon match this search.</p>';
+    return;
+  }
+  const batchSize = 40;
+  let index = 0;
+  const appendBatch = () => {
+    if (renderToken !== comparePokemonRenderToken) return;
+    const batch = matches.slice(index, index + batchSize).map((pokemon) => {
+      const key = getPokemonKey(pokemon);
+      return `<button type="button" class="team-pokemon-option" data-compare-add="${escapeHtml(key)}"><span class="team-option-copy"><span class="team-option-name"><span class="team-option-number">#${escapeHtml(pokemon.number)}</span>${escapeHtml(pokemon.displayName || pokemon.name)}</span><span class="team-option-types">${pokemon.types.filter(Boolean).map(renderMoveTypePill).join('')}</span></span><span class="team-option-action"></span></button>`;
+    }).join('');
+    elements.comparePokemonList.insertAdjacentHTML('beforeend', batch);
+    updateComparePokemonOptions();
+    index += batchSize;
+    if (index < matches.length) requestAnimationFrame(appendBatch);
+  };
+  appendBatch();
+}
+
+function updateComparePokemonOptions() {
+  if (!elements.comparePokemonList) return;
+  const selectedPokemon = getComparePokemon().filter(Boolean);
+  const full = selectedComparePokemonKeys.every(Boolean);
+  elements.comparePokemonList.querySelectorAll('[data-compare-add]').forEach((button) => {
+    const pokemon = pokemonByKey.get(button.dataset.compareAdd);
+    if (!pokemon) return;
+    const isAdded = selectedPokemon.some((selected) => selected.group === pokemon.group);
+    button.disabled = full || isAdded;
+    button.querySelector('.team-option-action').textContent = isAdded ? 'Selected' : full ? 'Slots full' : '+ Add';
+  });
+}
+
+function getPokemonCompareLabel(pokemon) {
+  return `#${pokemon.number} ${pokemon.displayName || pokemon.name}`;
+}
+
+function getPokemonCompareMoves(pokemon, category) {
+  return String(pokemon.moves?.[category] || '')
+    .split('|')
+    .map((entry) => {
+      const [moveId, ...learnedAsParts] = entry.trim().split('-');
+      if (!moveId) return null;
+      const move = movesLookup[moveId];
+      return {
+        id: moveId,
+        name: move?.name || `Move #${moveId}`,
+        learnedAs: formatMoveLearningMethod(category, learnedAsParts.join('-'))
+      };
+    })
+    .filter(Boolean)
+    .sort((left, right) => left.name.localeCompare(right.name));
+}
+
+function bindComparisonMetadataPopups(container, pokemon) {
+  const bindings = [
+    {
+      selector: '.catch-rate-meta-item',
+      bind(metaItem) {
+        const value = Number(metaItem.dataset.metaValue);
+        if (!Number.isFinite(value)) return;
+        const show = (event) => showCatchRatePopup(value, event.clientX, event.clientY, metaItem);
+        bindMetadataPopupEvents(metaItem, show);
+      }
+    },
+    {
+      selector: '.level-rate-meta-item',
+      bind(metaItem) {
+        const value = metaItem.dataset.metaValue;
+        if (!value) return;
+        const show = (event) => showLevelRatePopup(value, metaItem.dataset.metaExtra, event.clientX, event.clientY, metaItem);
+        bindMetadataPopupEvents(metaItem, show);
+      }
+    },
+    {
+      selector: '.egg-cycles-meta-item',
+      bind(metaItem) {
+        const value = metaItem.dataset.metaValue;
+        if (!value) return;
+        const show = (event) => showEggCyclePopup(value, metaItem.dataset.metaExtra, event.clientX, event.clientY, metaItem);
+        bindMetadataPopupEvents(metaItem, show);
+      }
+    },
+    {
+      selector: '.egg-group-meta-item',
+      bind(metaItem) {
+        if (!pokemon.eggGroup1 && !pokemon.eggGroup2) return;
+        const show = (event) => showEggGroupPopup(pokemon, event.clientX, event.clientY, metaItem);
+        bindMetadataPopupEvents(metaItem, show);
+      }
+    },
+    ...['shape', 'color'].map((key) => ({
+      selector: `.${key}-meta-item`,
+      bind(metaItem) {
+        const value = String(pokemon[key] || '').trim();
+        if (!value) return;
+        const label = metaItem.querySelector('strong')?.textContent || key;
+        const show = (event) => showAttributeCountPopup(label, { key, value }, event.clientX, event.clientY, metaItem, pokemon);
+        bindMetadataPopupEvents(metaItem, show);
+      }
+    }))
+  ];
+
+  bindings.forEach(({ selector, bind }) => {
+    container.querySelectorAll(selector).forEach((metaItem) => {
+      if (metaItem.dataset.comparisonPopupBound === '1') return;
+      bind(metaItem);
+      metaItem.dataset.comparisonPopupBound = '1';
+    });
+  });
+}
+
+function bindMetadataPopupEvents(metaItem, showPopup) {
+  metaItem.addEventListener('mouseenter', showPopup);
+  metaItem.addEventListener('mousemove', showPopup);
+  metaItem.addEventListener('mouseleave', () => {
+    if (movePopupHideTimer) clearTimeout(movePopupHideTimer);
+    movePopupHideTimer = setTimeout(hideMovePopup, 180);
+  });
+}
+
+function renderPokemonComparison() {
+  if (!elements.pokemonCompareContent || !elements.pokemonCompareSlots) return;
+  if (!allPokemon.length) {
+    elements.pokemonCompareContent.innerHTML = '<p class="small">Pokémon data is not available yet.</p>';
+    return;
+  }
+  const selected = getComparePokemon();
+  const moveGroups = [
+    ['levelUp', 'Level-Up'],
+    ['tm', 'TM'],
+    ['egg', 'Egg'],
+    ['evolution', 'Evolution'],
+    ['reminder', 'Reminder']
+  ];
+  const detailTabs = [
+    ['basic', 'Basic'],
+    ['stats', 'Stats'],
+    ['moveset', 'Moveset']
+  ];
+  const comparedPokemon = selected
+    .map((pokemon, slot) => pokemon ? { pokemon, slot } : null)
+    .filter(Boolean);
+  elements.pokemonCompareSlots.style.setProperty('--compare-count', String(selected.length));
+  elements.pokemonCompareSlots.innerHTML = `
+    ${selected.map((pokemon, slot) => {
+      if (!pokemon) {
+        return `<article class="pokemon-compare-slot pokemon-compare-slot-empty"><span>POKÉMON ${slot + 1}</span><strong>Choose a Pokémon from the list</strong></article>`;
+      }
+      const forms = pokemon.groupForms || [pokemon];
+      const formOptions = forms.length > 1
+        ? `<div class="team-form-control"><span class="team-form-label">Form</span><div class="team-form-picker"><button type="button" class="team-form-trigger" data-compare-form-toggle aria-haspopup="listbox" aria-expanded="false" aria-label="Choose form for Pokémon ${slot + 1}"><span>${escapeHtml(pokemon.name)}</span><span class="team-form-chevron" aria-hidden="true"></span></button><div class="team-form-menu" role="listbox" aria-label="Choose a form for ${escapeHtml(pokemon.displayName || pokemon.name)}" hidden>${forms.map((form) => {
+          const isSelected = getPokemonKey(form) === selectedComparePokemonKeys[slot];
+          return `<button type="button" role="option" aria-selected="${isSelected}" class="team-form-option pokemon-compare-form-option${isSelected ? ' selected' : ''}" data-compare-form-slot="${slot}" data-compare-form-key="${escapeHtml(getPokemonKey(form))}"><span>${escapeHtml(form.name)}</span>${isSelected ? '<span class="team-form-check" aria-hidden="true">✓</span>' : ''}</button>`;
+        }).join('')}</div></div></div>`
+        : '';
+      return `<article class="pokemon-compare-slot"><div><span>POKÉMON ${slot + 1}</span><h3>${escapeHtml(getPokemonCompareLabel(pokemon))}</h3></div><div class="team-option-types">${pokemon.types.filter(Boolean).map(renderMoveTypePill).join('')}</div><div class="pokemon-compare-slot-actions">${formOptions}<button type="button" class="team-slot-remove" data-compare-remove="${slot}" aria-label="Remove ${escapeHtml(pokemon.displayName || pokemon.name)}">Remove</button></div></article>`;
+    }).join('')}`;
+  if (comparedPokemon.length < 2) {
+    elements.pokemonCompareContent.innerHTML = '<p class="small pokemon-compare-prompt">Add at least two Pokémon from the list to compare their base stats, types, abilities, and learnable moves.</p>';
+    updateComparePokemonOptions();
+    attachTypeHoverHandlers(elements.pokemonCompareSlots);
+    return;
+  }
+  const compared = comparedPokemon.map(({ pokemon }) => pokemon);
+  const compareGridStyle = ` style="--compare-count:${compared.length}"`;
+  const renderColumnHead = (label) => `<div class="pokemon-compare-column-head"${compareGridStyle}><strong>${label}</strong>${compared.map((pokemon) => `<strong>${escapeHtml(pokemon.displayName || pokemon.name)}</strong>`).join('')}</div>`;
+  const renderRow = (label, cells, options = {}) => `<div class="pokemon-compare-row"${compareGridStyle}><div class="pokemon-compare-row-label"${options.hideLabel ? ' aria-hidden="true"' : ''}>${label}</div>${cells.join('')}</div>`;
+  const renderValueCell = (value, className = '') => `<div class="pokemon-compare-value${className}">${escapeHtml(String(value ?? '—'))}</div>`;
+
+  const statRows = [
+    ['HP', 'HP'],
+    ['Attack', 'ATK'],
+    ['Defense', 'DEF'],
+    ['Sp. Atk', 'SpA'],
+    ['Sp. Def', 'SpD'],
+    ['Speed', 'SPE']
+  ];
+  const renderComparedRows = (rows, source) => rows.map(([label, key]) => {
+    const values = compared.map((pokemon) => Number(pokemon[source]?.[key]) || 0);
+    const highest = Math.max(...values);
+    const lowest = Math.min(...values);
+    return renderRow(label, values.map((value) => {
+      const className = highest !== lowest && value === highest ? ' is-highest' : '';
+      return renderValueCell(value, className);
+    }));
+  }).join('');
+  const statsMarkup = renderComparedRows(statRows, 'baseStats');
+  const evMarkup = renderComparedRows(statRows, 'evStats');
+  const renderComparedValues = (label, getValue) => {
+    const values = compared.map((pokemon) => String(getValue(pokemon) ?? '').trim());
+    const numericValues = values.map((value) => value ? Number(value) : NaN);
+    const comparable = numericValues.every(Number.isFinite);
+    const cells = values.map((value, index) => {
+      const isHigher = comparable && numericValues[index] === Math.max(...numericValues)
+        && numericValues.some((other) => other < numericValues[index]);
+      return renderValueCell(value || '—', isHigher ? ' is-higher' : '');
+    });
+    return renderRow(label, cells);
+  };
+  const typeMarkup = renderRow('', compared.map((pokemon) => `<div class="pokemon-compare-type-values">${pokemon.types.filter(Boolean).map((type) => renderTypeBadge(type, { compact: true })).join('') || '<span class="small">Unknown</span>'}</div>`), { hideLabel: true });
+
+  const renderAbilities = (pokemon) => {
+    const abilities = pokemon.abilities.filter(Boolean).map((ability) => renderAbilityBox(ability));
+    if (pokemon.hiddenAbility) {
+      abilities.push(renderAbilityBox(pokemon.hiddenAbility, true));
+    }
+    return `<div class="pokemon-compare-ability-column">${abilities.join('') || '<span class="small">Unknown</span>'}</div>`;
+  };
+  const comparisonMetadata = [
+    ['Shape', 'shape', (pokemon) => pokemon.shape, ''],
+    ['Color', 'color', (pokemon) => pokemon.color, ''],
+    ['Egg Group', 'egg-group', (pokemon) => [pokemon.eggGroup1, pokemon.eggGroup2].filter(Boolean).join(' / '), ''],
+    ['Egg Cycles', 'egg-cycles', (pokemon) => pokemon.eggCycles, (pokemon) => pokemon.eggSteps],
+    ['Catch Rate', 'catch-rate', (pokemon) => pokemon.catchRate, ''],
+    ['Level Rate', 'level-rate', (pokemon) => pokemon.levelRate, (pokemon) => pokemon.totalXP]
+  ];
+  const renderComparisonMetaCell = (pokemon, slot, [label, type, getValue, getExtra]) => {
+    const value = getValue(pokemon);
+    const extra = typeof getExtra === 'function' ? getExtra(pokemon) : getExtra;
+    return `<div class="pokemon-compare-meta-cell" data-compare-pokemon-slot="${slot}">${renderMetaItem(label, value, '', type, extra)}</div>`;
+  };
+  const metadataRows = comparisonMetadata.map((metadata) => renderRow(
+    metadata[0],
+    comparedPokemon.map(({ pokemon, slot }) => renderComparisonMetaCell(pokemon, slot, metadata))
+  )).join('');
+  const activeMoveGroup = moveGroups.find(([key]) => key === selectedCompareMoveCategory) || moveGroups[0];
+  const moveById = new Map();
+  compared.forEach((pokemon, pokemonIndex) => {
+    getPokemonCompareMoves(pokemon, activeMoveGroup[0]).forEach((move) => {
+      if (!moveById.has(move.id)) {
+        moveById.set(move.id, {
+          id: move.id,
+          name: move.name,
+          learnedAs: Array(compared.length).fill('')
+        });
+      }
+      moveById.get(move.id).learnedAs[pokemonIndex] = move.learnedAs;
+    });
+  });
+  const moveRows = [...moveById.values()]
+    .sort((left, right) => left.name.localeCompare(right.name))
+    .map((move) => renderRow(`<button type="button" class="dex-navigation-link move-navigation-link" data-move-id="${escapeHtml(move.id)}">${escapeHtml(move.name)}</button>`, move.learnedAs.map((method) => renderValueCell(method || '—'))))
+    .join('');
+  const moveContent = moveDataLoaded
+    ? moveRows
+      ? `<div class="pokemon-compare-grid">${renderColumnHead('Move')}${moveRows}</div>`
+      : '<p class="small">No moves are listed for this category.</p>'
+    : moveDataLoadFailed
+      ? '<p class="small">Move data could not be loaded. Check the connection and try again.</p>'
+      : '<p class="small">Loading move data…</p>';
+
+  const tabButtons = detailTabs.map(([key, label]) =>
+    `<button type="button" id="compare-tab-${key}" class="pokemon-detail-tab${selectedCompareDetailTab === key ? ' active' : ''}" role="tab" aria-selected="${selectedCompareDetailTab === key}" aria-controls="compare-panel-${key}" tabindex="${selectedCompareDetailTab === key ? '0' : '-1'}" data-content-tab="${key}">${label}</button>`
+  ).join('');
+  const tabPanels = `
+    <section id="compare-panel-basic" class="pokemon-detail-panel${selectedCompareDetailTab === 'basic' ? ' active' : ''}" role="tabpanel" aria-labelledby="compare-tab-basic" data-content-panel="basic"${selectedCompareDetailTab === 'basic' ? '' : ' hidden'}>
+      <section class="stats-card pokemon-compare-types-section">
+        <div class="pokemon-compare-grid">${renderColumnHead('Types')}${typeMarkup}</div>
+      </section>
+      <section class="stats-card pokemon-compare-abilities">
+        <div class="pokemon-compare-grid">${renderColumnHead('Abilities')}${renderRow('', compared.map(renderAbilities), { hideLabel: true })}</div>
+      </section>
+      <section class="stats-card pokemon-compare-metadata">
+        <div class="pokemon-compare-grid">${renderColumnHead('Details')}${metadataRows}</div>
+      </section>
+    </section>
+    <section id="compare-panel-stats" class="pokemon-detail-panel${selectedCompareDetailTab === 'stats' ? ' active' : ''}" role="tabpanel" aria-labelledby="compare-tab-stats" data-content-panel="stats"${selectedCompareDetailTab === 'stats' ? '' : ' hidden'}>
+      <section class="stats-card pokemon-compare-stats">
+        <div class="pokemon-compare-grid">${renderColumnHead('Base Stats')}${statsMarkup}</div>
+      </section>
+      <section class="stats-card pokemon-compare-ev-stats">
+        <div class="pokemon-compare-grid">${renderColumnHead('EV Yield')}${evMarkup}</div>
+      </section>
+      <section class="stats-card pokemon-compare-bonus-stats">
+        <div class="pokemon-compare-grid">${renderColumnHead('Other')}${renderComparedValues('Base Friendship', (pokemon) => pokemon.baseFriendship)}${renderComparedValues('Base XP', (pokemon) => pokemon.xp)}</div>
+      </section>
+    </section>
+    <section id="compare-panel-moveset" class="pokemon-detail-panel${selectedCompareDetailTab === 'moveset' ? ' active' : ''}" role="tabpanel" aria-labelledby="compare-tab-moveset" data-content-panel="moveset"${selectedCompareDetailTab === 'moveset' ? '' : ' hidden'}>
+      <section class="stats-card pokemon-compare-move-section">
+        <div class="moveset-tabs">${moveGroups.map(([key, label]) => `
+          <button type="button" class="moveset-tab${activeMoveGroup[0] === key ? ' active' : ''}" data-compare-move-category="${key}">${label}</button>`).join('')}
+        </div>
+        ${moveContent}
+      </section>
+    </section>`;
+  elements.pokemonCompareContent.innerHTML = `
+    <div class="pokemon-detail-tabs" role="tablist" aria-label="Pokémon comparison details" data-content-tab-group="compare">${tabButtons}</div>
+    ${tabPanels}`;
+  updateComparePokemonOptions();
+  attachTypeHoverHandlers(elements.pokemonCompareSlots);
+  attachTypeHoverHandlers(elements.pokemonCompareContent);
+  attachPopupClickHandler(elements.pokemonCompareContent);
+  elements.pokemonCompareContent.querySelectorAll('.pokemon-compare-meta-cell').forEach((cell) => {
+    const pokemon = selected[Number(cell.dataset.comparePokemonSlot)];
+    if (!pokemon) return;
+    bindComparisonMetadataPopups(cell, pokemon);
+  });
+  bindContentTabs(elements.pokemonCompareContent, 'compare', (key) => {
+    selectedCompareDetailTab = key;
   });
 }
 
@@ -2773,6 +3228,43 @@ function renderTypeFilters(pokemonList) {
     logicOr.addEventListener('click', () => { logicOr.classList.add('active'); logicAnd.classList.remove('active'); applyFilter(); });
   }
 
+  const filterModeTabs = document.querySelectorAll('#pokedexView .filter-mode-tab');
+  filterModeTabs.forEach((button) => {
+    button.addEventListener('click', () => {
+      const mode = button.dataset.filterMode;
+      filterModeTabs.forEach((tab) => {
+        const isActive = tab === button;
+        tab.classList.toggle('active', isActive);
+        tab.setAttribute('aria-selected', String(isActive));
+      });
+      document.querySelectorAll('#pokedexView .filter-mode-panel').forEach((panel) => {
+        panel.hidden = panel.id !== `filterModePanel-${mode}`;
+      });
+    });
+  });
+
+  const sortOptionButtons = document.querySelectorAll('#pokedexView .sort-option');
+  const sortDirectionButtons = document.querySelectorAll('#pokedexView .sort-direction-button');
+  sortOptionButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+      selectedPokemonSortKey = button.dataset.sortKey;
+      if (selectedPokemonSortDirection === 'none') selectedPokemonSortDirection = 'asc';
+      updatePokemonSortControls();
+      applyFilter({ renderListImmediately: true });
+    });
+  });
+  sortDirectionButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+      selectedPokemonSortDirection = button.dataset.sortDirection;
+      if (selectedPokemonSortDirection === 'none') {
+        selectedPokemonSortKey = '';
+      }
+      updatePokemonSortControls();
+      applyFilter({ renderListImmediately: true });
+    });
+  });
+  updatePokemonSortControls();
+
   // Filter tab switching
   const tabButtons = document.querySelectorAll('#pokedexView .filter-tab');
   tabButtons.forEach((button) => {
@@ -3102,11 +3594,25 @@ function bindDualRangeFilters() {
   });
 }
 
+function updatePokemonSortControls() {
+  document.querySelectorAll('#pokedexView .sort-option').forEach((button) => {
+    const isActive = button.dataset.sortKey === selectedPokemonSortKey;
+    button.classList.toggle('active', isActive);
+    button.setAttribute('aria-pressed', String(isActive));
+  });
+  document.querySelectorAll('#pokedexView .sort-direction-button').forEach((button) => {
+    const isActive = button.dataset.sortDirection === selectedPokemonSortDirection;
+    button.classList.toggle('active', isActive);
+    button.setAttribute('aria-pressed', String(isActive));
+    button.disabled = !selectedPokemonSortKey && button.dataset.sortDirection !== 'none';
+  });
+}
+
 function handleSearch() {
   applyFilter();
 }
 
-function applyFilter() {
+function applyFilter(options = {}) {
   const query = elements.searchInput.value.trim().toLowerCase();
   const all = Object.values(groupsByDex).map((group) => group[0]);
 
@@ -3268,27 +3774,70 @@ function applyFilter() {
     return true;
   });
 
-  renderList(filteredPokemon);
+  if (selectedPokemonSortKey && selectedPokemonSortDirection !== 'none') {
+    const direction = selectedPokemonSortDirection === 'asc' ? 1 : -1;
+    filteredPokemon = filteredPokemon
+      .map((pokemon, index) => ({ pokemon, index, value: getPokemonSortValue(pokemon, selectedPokemonSortKey) }))
+      .sort((left, right) => {
+        if (left.value === null && right.value !== null) return 1;
+        if (right.value === null && left.value !== null) return -1;
+        if (left.value === null && right.value === null) return left.index - right.index;
+        const comparison = typeof left.value === 'string'
+          ? left.value.localeCompare(right.value, undefined, { numeric: true, sensitivity: 'base' })
+          : left.value - right.value;
+        return comparison === 0 ? left.index - right.index : comparison * direction;
+      })
+      .map(({ pokemon }) => pokemon);
+  }
+
+  renderList(filteredPokemon, options);
 }
 
-function renderList(pokemonList) {
+function getPokemonSortValue(pokemon, sortKey) {
+  let value;
+  if (sortKey === 'dex') value = pokemon.number;
+  else if (sortKey === 'height') value = pokemon.heightM;
+  else if (sortKey === 'weight') value = pokemon.weightKg;
+  else if (sortKey === 'shape') value = pokemon.shape;
+  else if (sortKey === 'color') value = pokemon.color;
+  else if (sortKey === 'friendship') value = pokemon.baseFriendship;
+  else if (sortKey === 'xp') value = pokemon.xp;
+  else if (sortKey === 'base:TOTAL') value = pokemon.baseStats?.total;
+  else if (sortKey.startsWith('base:')) value = pokemon.baseStats?.[sortKey.slice(5)];
+  else if (sortKey.startsWith('ev:')) value = pokemon.evStats?.[sortKey.slice(3)];
+
+  const text = String(value ?? '').trim();
+  if (!text) return null;
+  if (sortKey === 'shape' || sortKey === 'color') return text;
+  const numericValue = Number(text.replace(/,/g, '').replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(numericValue) ? numericValue : null;
+}
+
+function renderList(pokemonList, options = {}) {
   elements.listCount.textContent = `${pokemonList.length} available`;
   const profile = getCurrentProfile();
   const renderToken = pokemonListRenderToken + 1;
   pokemonListRenderToken = renderToken;
   pendingPokemonScroll = false;
+  const scrollTop = elements.pokemonList.scrollTop;
   elements.pokemonList.replaceChildren();
+  const renderCard = (pokemon) => {
+    const isFavorite = Boolean(profile?.favorites?.includes(getPokemonKey(pokemon)));
+    const active = selectedPokemon?.group === pokemon.group ? ' active' : '';
+    const pokemonIndex = pokemonIndexLookup.get(pokemon);
+    return `<button type="button" class="pokemon-card${active}" data-pokemon-index="${pokemonIndex}"><h3>${pokemon.displayName || pokemon.name}${isFavorite ? ' <span class="favorite-star" aria-label="Favorite">★</span>' : ''}</h3><div class="pokemon-card-meta"><p>#${pokemon.number}</p><div class="pokemon-card-types">${pokemon.types.filter(Boolean).map(renderMoveTypePill).join('')}</div></div></button>`;
+  };
+  if (options.renderListImmediately) {
+    elements.pokemonList.insertAdjacentHTML('beforeend', pokemonList.map(renderCard).join(''));
+    elements.pokemonList.scrollTop = scrollTop;
+    return;
+  }
   const batchSize = 40;
   let index = 0;
 
   const appendBatch = () => {
     if (renderToken !== pokemonListRenderToken) return;
-    const batch = pokemonList.slice(index, index + batchSize).map((pokemon) => {
-      const isFavorite = Boolean(profile?.favorites?.includes(getPokemonKey(pokemon)));
-      const active = selectedPokemon?.group === pokemon.group ? ' active' : '';
-      const pokemonIndex = pokemonIndexLookup.get(pokemon);
-      return `<button type="button" class="pokemon-card${active}" data-pokemon-index="${pokemonIndex}"><h3>${pokemon.displayName || pokemon.name}${isFavorite ? ' <span class="favorite-star" aria-label="Favorite">★</span>' : ''}</h3><div class="pokemon-card-meta"><p>#${pokemon.number}</p><div class="pokemon-card-types">${pokemon.types.filter(Boolean).map(renderMoveTypePill).join('')}</div></div></button>`;
-    }).join('');
+    const batch = pokemonList.slice(index, index + batchSize).map(renderCard).join('');
     elements.pokemonList.insertAdjacentHTML('beforeend', batch);
     index += batchSize;
 
@@ -4799,11 +5348,11 @@ function showEggGroupPopup(pokemon, clientX, clientY, targetElement) {
   }
 }
 
-function showAttributeCountPopup(label, value, clientX, clientY, targetElement) {
+function showAttributeCountPopup(label, value, clientX, clientY, targetElement, subjectPokemon = selectedPokemon) {
   createMovePopup();
   const popup = document.getElementById('move-popup');
   resetPopupTheme(popup);
-  const count = allPokemon.filter((pokemon) => pokemon !== selectedPokemon && String(pokemon[value.key] || '').trim() === value.value).length;
+  const count = allPokemon.filter((pokemon) => pokemon !== subjectPokemon && String(pokemon[value.key] || '').trim() === value.value).length;
 
   popup.innerHTML = `
     <div style="font-size:10px;letter-spacing:.16em;text-transform:uppercase;text-align:center;color:#93c5fd;margin-bottom:7px;">${escapeHtml(label)}</div>
@@ -5064,6 +5613,24 @@ function showMovePopup(moveId, clientX, clientY, targetElement) {
 
   popup.innerHTML = html + (effectHtml || `<div class="move-popup-effect"><small>—</small></div>`);
   popup.setAttribute('aria-hidden', 'false');
+  const viewportWidth = document.documentElement.clientWidth || window.innerWidth;
+  const viewportHeight = document.documentElement.clientHeight || window.innerHeight;
+  popup.style.boxSizing = 'border-box';
+  popup.style.width = 'fit-content';
+  popup.style.minWidth = '0';
+  const popupWidthLimit = window.matchMedia('(max-width: 640px)').matches ? 280 : 420;
+  popup.style.maxWidth = `${Math.max(0, Math.min(popupWidthLimit, viewportWidth - 24))}px`;
+  popup.style.maxHeight = `${Math.max(0, viewportHeight - 24)}px`;
+  popup.style.overflowY = 'auto';
+  popup.style.overflowWrap = 'anywhere';
+  popup.querySelectorAll('div[style*="display:flex"]').forEach((row) => {
+    row.style.flexWrap = 'wrap';
+    row.style.maxWidth = '100%';
+    [...row.children].forEach((child) => {
+      child.style.minWidth = '0';
+      child.style.overflowWrap = 'anywhere';
+    });
+  });
   // make visible with animation
   if (!popup.classList.contains('visible')) popup.classList.add('visible');
   const offset = 8;
@@ -5072,7 +5639,20 @@ function showMovePopup(moveId, clientX, clientY, targetElement) {
   const height = popup.offsetHeight || 120;
   let left = 0;
   let top = 0;
-  if (targetElement && typeof targetElement.getBoundingClientRect === 'function') {
+  const movesetTable = targetElement?.closest?.('.moveset-table');
+  const movesetTableWrap = movesetTable?.closest('.moveset-table-wrap');
+  const tableOverflowsViewport = movesetTable
+    && movesetTableWrap
+    && (movesetTable.scrollWidth > viewportWidth || movesetTable.getBoundingClientRect().width > viewportWidth);
+  if (tableOverflowsViewport) {
+    const rect = movesetTableWrap.getBoundingClientRect();
+    const visibleLeft = Math.max(8, rect.left);
+    const visibleRight = Math.min(viewportWidth - 8, rect.right);
+    const visibleTop = Math.max(8, rect.top);
+    const visibleBottom = Math.min(viewportHeight - 8, rect.bottom);
+    left = visibleRight > visibleLeft ? (visibleLeft + visibleRight - width) / 2 : (viewportWidth - width) / 2;
+    top = visibleBottom > visibleTop ? (visibleTop + visibleBottom - height) / 2 : (viewportHeight - height) / 2;
+  } else if (targetElement && typeof targetElement.getBoundingClientRect === 'function') {
     const rect = targetElement.getBoundingClientRect();
     // Place centered horizontally above the row
     left = Math.round(rect.left + rect.width / 2 - width / 2);
@@ -5088,8 +5668,8 @@ function showMovePopup(moveId, clientX, clientY, targetElement) {
     if (left + width + 16 > window.innerWidth) left = clientX - width - offset;
     if (top + height + 16 > window.innerHeight) top = clientY - height - offset;
   }
-  popup.style.left = `${Math.max(8, Math.round(left))}px`;
-  popup.style.top = `${Math.max(8, Math.round(top))}px`;
+  popup.style.left = `${Math.min(Math.max(12, Math.round(left)), Math.max(12, viewportWidth - width - 12))}px`;
+  popup.style.top = `${Math.min(Math.max(12, Math.round(top)), Math.max(12, viewportHeight - height - 12))}px`;
   if (movePopupHideTimer) {
     clearTimeout(movePopupHideTimer);
     movePopupHideTimer = null;
