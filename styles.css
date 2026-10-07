@@ -2837,8 +2837,8 @@ button, input {
   text-align: center;
   font-size: 0.66rem;
   line-height: 1;
-  min-height: 1.35rem;
-  height: 1.35rem;
+  min-height: 1.5rem;
+  height: 1.5rem;
   box-sizing: border-box;
 }
 
@@ -3000,8 +3000,8 @@ button, input {
   width: 32px;
   max-width: 32px;
   line-height: 1;
-  min-height: 1.35rem;
-  height: 1.35rem;
+  min-height: 1.5rem;
+  height: 1.5rem;
   box-sizing: border-box;
 }
 
@@ -3387,6 +3387,10 @@ button, input {
 }
 
 .effectiveness-card {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
   overflow-x: auto;
   width: 100%;
 }
@@ -3687,6 +3691,40 @@ button, input {
   text-align: center;
 }
 
+.moveset-generation-tabs,
+.moveset-gameset-tabs {
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: center;
+  gap: 0.6rem;
+  max-width: 100%;
+  overflow-x: auto;
+  padding: 0.25rem 0.15rem;
+  scrollbar-width: thin;
+}
+
+.moveset-generation-tabs .moveset-tab {
+  flex: 1 0 auto;
+  min-width: 4.5rem;
+}
+
+.moveset-gameset-label {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.moveset-status {
+  margin: 0;
+  padding: 0.85rem 1rem;
+  border-radius: 12px;
+  background: rgba(15, 23, 32, 0.7);
+  color: var(--text-muted);
+  text-align: center;
+}
+
 .moveset-tabs {
   display: flex;
   flex-wrap: wrap;
@@ -3884,6 +3922,10 @@ button, input {
 }
 
 @media (max-width: 1080px) {
+  .hero {
+    grid-template-columns: 1fr;
+  }
+
   .layout {
     grid-template-columns: 1fr;
   }
@@ -3901,29 +3943,6 @@ button, input {
   .app-shell {
     padding: 0.75rem;
     padding-bottom: 12rem;
-  }
-
-  .hero {
-    grid-template-columns: 1fr;
-    padding: 1rem;
-  }
-
-  .hero-actions {
-    text-align: left;
-    min-width: 0;
-  }
-
-  .dex-switcher {
-    justify-self: start;
-    width: 100%;
-    min-width: 0;
-  }
-
-  .dex-tab {
-    min-width: 0;
-    padding-right: 0.2rem;
-    padding-left: 0.2rem;
-    font-size: 0.7rem;
   }
 
   .team-roster,
@@ -4019,10 +4038,6 @@ button, input {
     max-width: calc(100% - 2.5rem);
   }
 
-  .hero-buttons {
-    justify-content: flex-start;
-  }
-
   .personal-tools {
     grid-template-columns: 1fr;
   }
@@ -4094,6 +4109,34 @@ button, input {
 
   .type-table .type-stack-cell {
     padding: 0.12rem 0;
+  }
+}
+
+@media (max-width: 720px) {
+  .hero {
+    padding: 1rem;
+  }
+
+  .hero-actions {
+    text-align: left;
+    min-width: 0;
+  }
+
+  .dex-switcher {
+    justify-self: start;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .dex-tab {
+    min-width: 0;
+    padding-right: 0.2rem;
+    padding-left: 0.2rem;
+    font-size: 0.7rem;
+  }
+
+  .hero-buttons {
+    justify-content: flex-start;
   }
 }
 

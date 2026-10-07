@@ -6,6 +6,17 @@ const ABILITY_SHEET_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT91A
 const MOVES_SHEET_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTwDxqxofxdx7M2HU-pMFBFBcMDI6mIVBeVim1sxIC_zalARL4Z7DVNiPkhGwY4ZKmVpC9FETrjZtOH/pub?gid=1813387196&single=true&output=csv';
 const MOVES_SHEET_HTML = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTwDxqxofxdx7M2HU-pMFBFBcMDI6mIVBeVim1sxIC_zalARL4Z7DVNiPkhGwY4ZKmVpC9FETrjZtOH/pubhtml/sheet?headers=false&gid=1813387196';
 const MOVE_DESCRIPTIONS_CSV = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT91AhjLXEf0LGvk-ck5jcQJOzEHIaBajUKI92zfHkrg1I4SrTnABPLXyveLTNRKegrImW49xxmY8L3/pub?gid=2098324621&single=true&output=csv';
+const GENERATION_MOVE_SHEET_URLS = [
+  'https://docs.google.com/spreadsheets/d/e/2PACX-1vRWjGrOFDEGsnUaj9wysSNYp9SRklG0bzdX5Us5DHJGHUwL8d2YBuNjYS2S6XumN5Ku2kxh3-d5cubU/pub?gid=0&single=true&output=csv',
+  'https://docs.google.com/spreadsheets/d/e/2PACX-1vRWjGrOFDEGsnUaj9wysSNYp9SRklG0bzdX5Us5DHJGHUwL8d2YBuNjYS2S6XumN5Ku2kxh3-d5cubU/pub?gid=110138543&single=true&output=csv',
+  'https://docs.google.com/spreadsheets/d/e/2PACX-1vRWjGrOFDEGsnUaj9wysSNYp9SRklG0bzdX5Us5DHJGHUwL8d2YBuNjYS2S6XumN5Ku2kxh3-d5cubU/pub?gid=724577958&single=true&output=csv',
+  'https://docs.google.com/spreadsheets/d/e/2PACX-1vRWjGrOFDEGsnUaj9wysSNYp9SRklG0bzdX5Us5DHJGHUwL8d2YBuNjYS2S6XumN5Ku2kxh3-d5cubU/pub?gid=502916521&single=true&output=csv',
+  'https://docs.google.com/spreadsheets/d/e/2PACX-1vRWjGrOFDEGsnUaj9wysSNYp9SRklG0bzdX5Us5DHJGHUwL8d2YBuNjYS2S6XumN5Ku2kxh3-d5cubU/pub?gid=1538379012&single=true&output=csv',
+  'https://docs.google.com/spreadsheets/d/e/2PACX-1vRWjGrOFDEGsnUaj9wysSNYp9SRklG0bzdX5Us5DHJGHUwL8d2YBuNjYS2S6XumN5Ku2kxh3-d5cubU/pub?gid=856795351&single=true&output=csv',
+  'https://docs.google.com/spreadsheets/d/e/2PACX-1vRWjGrOFDEGsnUaj9wysSNYp9SRklG0bzdX5Us5DHJGHUwL8d2YBuNjYS2S6XumN5Ku2kxh3-d5cubU/pub?gid=1662250866&single=true&output=csv',
+  'https://docs.google.com/spreadsheets/d/e/2PACX-1vRWjGrOFDEGsnUaj9wysSNYp9SRklG0bzdX5Us5DHJGHUwL8d2YBuNjYS2S6XumN5Ku2kxh3-d5cubU/pub?gid=1847237187&single=true&output=csv',
+  'https://docs.google.com/spreadsheets/d/e/2PACX-1vRWjGrOFDEGsnUaj9wysSNYp9SRklG0bzdX5Us5DHJGHUwL8d2YBuNjYS2S6XumN5Ku2kxh3-d5cubU/pub?gid=447964549&single=true&output=csv'
+];
 const SHEET_CACHE_DB_NAME = 'interactive-pokedex-cache';
 const SHEET_CACHE_STORE_NAME = 'sheets';
 
@@ -130,6 +141,10 @@ let selectedCompareDetailTab = 'basic';
 let comparePokemonRenderToken = 0;
 let selectedPokedexGen = 1;
 let selectedMoveCategory = 'levelUp';
+let selectedMovesetGeneration = 9;
+let selectedMovesetGamesetByGeneration = {};
+let movesetGenerationData = {};
+let movesetGenerationPromises = {};
 let typingFilterValue = 'any';
 let eggGroupLogic = 'or';
 let groupsByDex = {};
@@ -148,7 +163,7 @@ let abilityDexInitialized = false;
 let abilityDataPromise = null;
 let moveDexDataPromise = null;
 let moveDescriptionsDataPromise = null;
-let moveLearnersLookup = {};
+let moveLearnersLookupCache = new WeakMap();
 let moveDescriptionsLookup = {};
 let moveDescriptionGamesets = [];
 let selectedMove = null;
@@ -172,6 +187,8 @@ const GUEST_TEAM_STORAGE_KEY = 'pokedexGuestTeam';
 const GUEST_TEAM_MOVES_STORAGE_KEY = 'pokedexGuestTeamMoves';
 let selectedMoveGen = 9;
 let selectedMoveLearnerCategory = 'levelUp';
+let selectedMoveLearnerGeneration = 9;
+let selectedMoveLearnerGamesetByGeneration = {};
 let abilityDescriptionsLookup = {};
 let movePopupHideTimer = null;
 let movePopupPinned = false;
@@ -664,11 +681,13 @@ function switchDexView(dex) {
 
 function initializeDexView(dex) {
   if (dex === 'compare') {
+    loadMovesetGeneration(9);
     renderPokemonComparison();
     if (!moveDataLoaded) loadMoveDexData();
     return;
   }
   if (dex === 'team') {
+    loadMovesetGeneration(9);
     renderTeamBuilder();
     if (!moveDataLoaded) loadMoveDexData();
     return;
@@ -681,8 +700,8 @@ function initializeDexView(dex) {
     loadMoveDescriptions();
     return;
   }
+  if (dex === 'move') loadMovesetGeneration(9);
   if (dex === 'move' && !moveDexInitialized) {
-    moveLearnersLookup = buildMoveLearnersLookup(allPokemon);
     moveDexInitialized = true;
     renderMoveFilters();
     applyMoveFilters();
@@ -1048,6 +1067,131 @@ async function loadMovesData() {
     const htmlText = await response.text();
     return parseSheetHTML(htmlText);
   }
+}
+
+async function loadGenerationMovesetData(generation) {
+  const sheetUrl = GENERATION_MOVE_SHEET_URLS[generation - 1];
+  if (!sheetUrl) throw new Error(`No moveset sheet is configured for Generation ${generation}`);
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 20000);
+  try {
+    const response = await fetch(sheetUrl, { signal: controller.signal });
+    if (!response.ok) throw new Error(`Generation ${generation} moveset CSV fetch failed`);
+    return parseCSV(await response.text());
+  } catch (error) {
+    if (error.name === 'AbortError') {
+      throw new Error(`Generation ${generation} moveset CSV request timed out`);
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
+function parseGenerationMoveset(rows) {
+  const headerRow = rows[1] || [];
+  const gameHeaderRow = rows[0] || [];
+  const groupStarts = headerRow.reduce((starts, header, index) => {
+    const normalizedHeader = String(header || '').toLowerCase().replace(/[^a-z]/g, '');
+    if (normalizedHeader === 'levelup') starts.push(index);
+    return starts;
+  }, []);
+
+  return groupStarts.map((start, groupIndex) => {
+    const name = String(gameHeaderRow[start] || '').trim() || `Game Set ${groupIndex + 1}`;
+    const pokemon = new Map();
+    rows.slice(2).forEach((row) => {
+      const pokemonName = String(row[0] || '').trim();
+      if (!pokemonName) return;
+      const moves = {
+        levelUp: String(row[start] || '').trim(),
+        tm: String(row[start + 1] || '').trim(),
+        egg: String(row[start + 2] || '').trim(),
+        evolution: String(row[start + 3] || '').trim(),
+        reminder: String(row[start + 4] || '').trim()
+      };
+      pokemon.set(normalizePokemonName(pokemonName), moves);
+    });
+    return {
+      key: `set-${groupIndex}`,
+      name,
+      tabLabel: getMovesetGameTabLabel(name),
+      pokemon
+    };
+  });
+}
+
+function getMovesetGameTabLabel(name) {
+  const aliases = {
+    'red blue': 'RB',
+    yellow: 'Yellow',
+    'gold silver': 'GS',
+    crystal: 'Crystal',
+    'ruby sapphire': 'RS',
+    emerald: 'Emerald',
+    'fire red leaf green': 'FRLG',
+    'diamond pearl': 'DP',
+    platinum: 'PT',
+    'heart gold soul silver': 'HGSS',
+    'black white': 'BW',
+    'black 2 white 2': 'B2W2',
+    'x y': 'XY',
+    'omega ruby alpha sapphire': 'ORAS',
+    'sun moon': 'SM',
+    'ultra sun ultra moon': 'USUM',
+    'lets go pikachu eevee': 'LGPE',
+    'sword shield': 'SwSh',
+    'brilliant diamond shining pearl': 'BDSP',
+    'legends arceus': 'PLA',
+    'scarlet violet': 'SV',
+    'legends z a': 'ZA'
+  };
+  return aliases[normalizeGameKey(name)] || name;
+}
+
+function loadMovesetGeneration(generation) {
+  if (movesetGenerationData[generation]?.status === 'loaded') return Promise.resolve();
+  if (movesetGenerationPromises[generation]) return movesetGenerationPromises[generation];
+
+  movesetGenerationData[generation] = { status: 'loading', gamesets: [] };
+  refreshPokemonMoveset();
+  const promise = loadCachedSheetRows(
+    `moveset-generation-${generation}`,
+    () => loadGenerationMovesetData(generation)
+  ).then((rows) => {
+    movesetGenerationData[generation] = {
+      status: 'loaded',
+      gamesets: parseGenerationMoveset(rows)
+    };
+    if (generation === 9) refreshDefaultPokemonMoveset();
+    refreshSelectedMoveLearners();
+    refreshPokemonMoveset();
+  }).catch((error) => {
+    console.error(`Unable to load Generation ${generation} moveset data`, error);
+    movesetGenerationData[generation] = { status: 'error', gamesets: [] };
+    refreshSelectedMoveLearners();
+    refreshPokemonMoveset();
+  }).finally(() => {
+    delete movesetGenerationPromises[generation];
+  });
+  movesetGenerationPromises[generation] = promise;
+  return promise;
+}
+
+function refreshDefaultPokemonMoveset() {
+  if (selectedMove) renderMoveDetails(selectedMove);
+  if (selectedDex === 'team') renderTeamBuilder({ renderOptions: false });
+  if (selectedDex === 'compare') renderPokemonComparison();
+}
+
+function refreshSelectedMoveLearners() {
+  if (selectedDex === 'move' && selectedMove && selectedMoveDetailTab === 'learners') {
+    renderMoveDetails(selectedMove);
+  }
+}
+
+function getPokemonMovesFromDefaultGameset(pokemon) {
+  return movesetGenerationData[9]?.gamesets[0]?.pokemon.get(normalizePokemonName(pokemon.name)) || {};
 }
 
 async function loadAbilityData() {
@@ -1582,13 +1726,19 @@ function buildMovesLookup(rows) {
   }, {});
 }
 
-function buildMoveLearnersLookup(pokemonList) {
+function buildMoveLearnersLookup(gameset) {
   const categories = ['levelUp', 'tm', 'egg', 'evolution', 'reminder'];
   const lookup = {};
+  const pokemonByName = new Map(allPokemon.map((pokemon) => [
+    normalizePokemonName(pokemon.name),
+    pokemon
+  ]));
 
-  pokemonList.forEach((pokemon) => {
+  gameset.pokemon.forEach((pokemonMoves, pokemonName) => {
+    const pokemon = pokemonByName.get(pokemonName);
+    if (!pokemon) return;
     categories.forEach((category) => {
-      String(pokemon.moves?.[category] || '')
+      String(pokemonMoves[category] || '')
         .split('|')
         .map((entry) => entry.trim())
         .filter(Boolean)
@@ -1611,6 +1761,14 @@ function buildMoveLearnersLookup(pokemonList) {
     });
   });
   return lookup;
+}
+
+function getMoveLearnersLookup(gameset) {
+  if (!gameset) return {};
+  if (!moveLearnersLookupCache.has(gameset)) {
+    moveLearnersLookupCache.set(gameset, buildMoveLearnersLookup(gameset));
+  }
+  return moveLearnersLookupCache.get(gameset);
 }
 
 function renderMoveFilters() {
@@ -1956,7 +2114,7 @@ function getPokemonTeamMoves(pokemon) {
   ];
   const seen = new Set();
   return categoryLabels.flatMap(([category, label]) => (
-    String(pokemon.moves?.[category] || '')
+    String(getPokemonMovesFromDefaultGameset(pokemon)[category] || '')
       .split('|')
       .map((entry) => entry.trim())
       .filter(Boolean)
@@ -2230,7 +2388,7 @@ function getPokemonCompareLabel(pokemon) {
 }
 
 function getPokemonCompareMoves(pokemon, category) {
-  return String(pokemon.moves?.[category] || '')
+  return String(getPokemonMovesFromDefaultGameset(pokemon)[category] || '')
     .split('|')
     .map((entry) => {
       const [moveId, ...learnedAsParts] = entry.trim().split('-');
@@ -2687,6 +2845,21 @@ function renderMoveDetails(move) {
     });
   });
 
+  elements.moveDetails.querySelectorAll('.move-learners-generation-tab').forEach((button) => {
+    button.addEventListener('click', () => {
+      selectedMoveLearnerGeneration = Number(button.dataset.generation);
+      loadMovesetGeneration(selectedMoveLearnerGeneration);
+      renderMoveDetails(move);
+    });
+  });
+
+  elements.moveDetails.querySelectorAll('.move-learners-gameset-tab').forEach((button) => {
+    button.addEventListener('click', () => {
+      selectedMoveLearnerGamesetByGeneration[selectedMoveLearnerGeneration] = button.dataset.gameset;
+      renderMoveDetails(move);
+    });
+  });
+
   elements.moveDetails.querySelectorAll('.pokemon-navigation-link').forEach((button) => {
     button.addEventListener('click', () => navigateToPokemon(button.dataset.pokemonNumber, button.dataset.pokemonName));
   });
@@ -2912,7 +3085,35 @@ function renderMoveLearnersSection(move) {
     { key: 'evolution', label: 'Evolution' },
     { key: 'reminder', label: 'Reminder' }
   ];
-  const learnersByCategory = moveLearnersLookup[move.id] || {};
+  const generationTabs = Array.from({ length: 9 }, (_, index) => index + 1)
+    .map((generation) => `<button type="button" class="moveset-tab moveset-generation-tab move-learners-generation-tab${selectedMoveLearnerGeneration === generation ? ' active' : ''}" data-generation="${generation}" aria-pressed="${selectedMoveLearnerGeneration === generation}">Gen ${generation}</button>`)
+    .join('');
+  const generationData = movesetGenerationData[selectedMoveLearnerGeneration];
+  let gameSet = null;
+  let gameSetTabs = '';
+  let learnerNotice = '';
+  let learnersByCategory = {};
+
+  if (!generationData || generationData.status === 'loading') {
+    learnerNotice = `<p class="moveset-status">Loading move data for Generation ${selectedMoveLearnerGeneration}...</p>`;
+  } else if (generationData.status === 'error') {
+    learnerNotice = `<p class="moveset-status">Move data for Generation ${selectedMoveLearnerGeneration} could not be loaded. Select this generation to try again.</p>`;
+  } else if (!generationData.gamesets.length) {
+    learnerNotice = `<p class="moveset-status">No move data is available for Generation ${selectedMoveLearnerGeneration}.</p>`;
+  } else {
+    const selectedGamesetKey = selectedMoveLearnerGamesetByGeneration[selectedMoveLearnerGeneration];
+    gameSet = generationData.gamesets.find((item) => item.key === selectedGamesetKey)
+      || generationData.gamesets[0];
+    selectedMoveLearnerGamesetByGeneration[selectedMoveLearnerGeneration] = gameSet.key;
+    if (generationData.gamesets.length > 1) {
+      gameSetTabs = `<div class="moveset-gameset-tabs" role="group" aria-label="Generation ${selectedMoveLearnerGeneration} games">${generationData.gamesets.map((item) => `<button type="button" class="moveset-tab move-learners-gameset-tab${gameSet.key === item.key ? ' active' : ''}" data-gameset="${escapeHtml(item.key)}" aria-pressed="${gameSet.key === item.key}">${escapeHtml(item.tabLabel)}</button>`).join('')}</div>`;
+    } else {
+      gameSetTabs = `<p class="moveset-gameset-label">${escapeHtml(gameSet.name)}</p>`;
+    }
+
+    learnersByCategory = getMoveLearnersLookup(gameSet)[move.id] || {};
+  }
+
   const activeCategory = groups.find((group) => group.key === selectedMoveLearnerCategory) || groups[0];
   const learners = learnersByCategory[activeCategory.key] || [];
   const rows = learners.length
@@ -2924,21 +3125,27 @@ function renderMoveLearnersSection(move) {
           <td>${escapeHtml(formatMoveLearningMethod(activeCategory.key, learnedAs))}</td>
         </tr>`).join('')
     : '<tr><td colspan="4" class="moveset-empty">No Pokémon learn this move in this category.</td></tr>';
-  const tabs = groups.map((group) => {
+  const tabs = gameSet ? groups.map((group) => {
     const count = (learnersByCategory[group.key] || []).length;
     return `<button type="button" class="moveset-tab move-learners-tab${activeCategory.key === group.key ? ' active' : ''}${count ? '' : ' disabled'}" data-category="${group.key}">${group.label}</button>`;
-  }).join('');
-
-  return `
-    <section class="moveset-card stats-card move-learners-card">
-      <div class="section-header"><h2>Pokémon That Learn This Move</h2></div>
-      <div class="moveset-tabs">${tabs}</div>
+  }).join('') : '';
+  const learnerTable = gameSet
+    ? `<div class="moveset-tabs">${tabs}</div>
       <div class="moveset-table-wrap">
         <table class="moveset-table move-learners-table">
           <thead><tr><th>Dex #</th><th>Pokémon</th><th>Type</th><th>Learned Via</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
-      </div>
+      </div>`
+    : '';
+
+  return `
+    <section class="moveset-card stats-card move-learners-card">
+      <div class="section-header"><h2>Pokémon That Learn This Move</h2></div>
+      <div class="moveset-generation-tabs" role="group" aria-label="Learner generation">${generationTabs}</div>
+      ${gameSetTabs}
+      ${learnerNotice}
+      ${learnerTable}
     </section>`;
 }
 
@@ -3004,19 +3211,11 @@ function buildPokemon(rows) {
   const evIndices = [82, 83, 84, 85, 86, 87];
   const genderIndices = [89, 90];
   const typeStart = 91;
-  const movesetIndex = 109;
-  const moveCategoryIndices = {
-    levelUp: 109,
-    tm: 110,
-    egg: 111,
-    evolution: 112,
-    reminder: 113
-  };
 
   const effectivenessIndices = [];
   const typeNames = [];
 
-  for (let i = typeStart; i < (movesetIndex >= 0 ? movesetIndex : headerRow.length); i += 1) {
+  for (let i = typeStart; i < Math.min(headerRow.length, typeStart + TYPE_ORDER.length); i += 1) {
     if (headerRow[i]) {
       typeNames.push(headerRow[i]);
       effectivenessIndices.push(i);
@@ -3074,13 +3273,6 @@ function buildPokemon(rows) {
     const formId = mainDex || number;
     const isPrimary = Boolean(mainDex);
     const formKey = buildPokedexLookupKey(number, mainDex, name);
-    const moves = {
-      levelUp: getRowValue(row, moveCategoryIndices.levelUp),
-      tm: getRowValue(row, moveCategoryIndices.tm),
-      egg: getRowValue(row, moveCategoryIndices.egg),
-      evolution: getRowValue(row, moveCategoryIndices.evolution),
-      reminder: getRowValue(row, moveCategoryIndices.reminder)
-    };
     const availability = gameColumns.map((game) => {
       const value = getRowValue(row, game.index).toLowerCase();
       return {
@@ -3097,7 +3289,6 @@ function buildPokemon(rows) {
     }));
 
     return {
-      row,
       number,
       mainDex,
       formId,
@@ -3146,8 +3337,7 @@ function buildPokemon(rows) {
       heightFtRaw,
       heightFt,
       weightKg,
-      weightLb,
-      moves
+      weightLb
     };
   };
 
@@ -4247,6 +4437,7 @@ function bindPokemonDetailTabs(container) {
     container.querySelectorAll('[data-pokemon-detail-panel]').forEach((panel) => {
       panel.hidden = panel.dataset.pokemonDetailPanel !== selectedKey;
     });
+    if (selectedKey === 'moveset') loadMovesetGeneration(selectedMovesetGeneration);
   };
 
   tabs.forEach((tab) => {
@@ -4267,6 +4458,21 @@ function bindPokemonDetailTabs(container) {
 }
 
 function bindPokemonMovesetControls(container, pokemon) {
+  container.querySelectorAll('.moveset-generation-tab').forEach((button) => {
+    button.addEventListener('click', () => {
+      selectedMovesetGeneration = Number(button.dataset.generation);
+      loadMovesetGeneration(selectedMovesetGeneration);
+      renderDetails(pokemon);
+    });
+  });
+
+  container.querySelectorAll('.moveset-gameset-tab').forEach((button) => {
+    button.addEventListener('click', () => {
+      selectedMovesetGamesetByGeneration[selectedMovesetGeneration] = button.dataset.gameset;
+      renderDetails(pokemon);
+    });
+  });
+
   container.querySelectorAll('.moveset-tab').forEach((button) => {
     button.addEventListener('click', () => {
       selectedMoveCategory = button.dataset.category || 'levelUp';
@@ -4752,20 +4958,59 @@ function renderMovesetSection(pokemon) {
     { key: 'reminder', label: 'Reminder' }
   ];
 
-  const movesByGroup = new Map(moveGroups.map((group) => [
-    group.key,
-    String(pokemon.moves?.[group.key] || '')
-      .split('|')
-      .map((entry) => entry.trim())
-      .filter(Boolean)
-  ]));
+  const generationTabs = Array.from({ length: 9 }, (_, index) => index + 1)
+    .map((generation) => `<button type="button" class="moveset-tab moveset-generation-tab${selectedMovesetGeneration === generation ? ' active' : ''}" data-generation="${generation}" aria-pressed="${selectedMovesetGeneration === generation}">Gen ${generation}</button>`)
+    .join('');
+  const generationData = movesetGenerationData[selectedMovesetGeneration];
+  let gameSet = null;
+  let gameSetTabs = '';
+  let movesByGroup = new Map(moveGroups.map((group) => [group.key, []]));
+  let movesetNotice = '';
+
+  if (!generationData || generationData.status === 'loading') {
+    movesetNotice = `<p class="moveset-status">Loading move data for Generation ${selectedMovesetGeneration}...</p>`;
+  } else if (generationData.status === 'error') {
+    movesetNotice = `<p class="moveset-status">Move data for Generation ${selectedMovesetGeneration} could not be loaded. Select this generation to try again.</p>`;
+  } else if (!generationData.gamesets.length) {
+    movesetNotice = `<p class="moveset-status">No move data is available for Generation ${selectedMovesetGeneration}.</p>`;
+  } else {
+    const selectedGamesetKey = selectedMovesetGamesetByGeneration[selectedMovesetGeneration];
+    gameSet = generationData.gamesets.find((item) => item.key === selectedGamesetKey)
+      || generationData.gamesets[0];
+    selectedMovesetGamesetByGeneration[selectedMovesetGeneration] = gameSet.key;
+    if (generationData.gamesets.length > 1) {
+      gameSetTabs = `<div class="moveset-gameset-tabs" role="group" aria-label="Generation ${selectedMovesetGeneration} games">${generationData.gamesets.map((item) => `<button type="button" class="moveset-tab moveset-gameset-tab${gameSet.key === item.key ? ' active' : ''}" data-gameset="${escapeHtml(item.key)}" aria-pressed="${gameSet.key === item.key}">${escapeHtml(item.tabLabel)}</button>`).join('')}</div>`;
+    } else {
+      gameSetTabs = `<p class="moveset-gameset-label">${escapeHtml(gameSet.name)}</p>`;
+    }
+
+    const pokemonMoves = gameSet.pokemon.get(normalizePokemonName(pokemon.name));
+    if (!pokemonMoves) {
+      movesetNotice = `<p class="moveset-status">No moveset data is listed for ${escapeHtml(pokemon.name)} in ${escapeHtml(gameSet.name)}.</p>`;
+    } else {
+      movesByGroup = new Map(moveGroups.map((group) => [
+        group.key,
+        String(pokemonMoves[group.key] || '')
+          .split('|')
+          .map((entry) => entry.trim())
+          .filter(Boolean)
+      ]));
+      const hasAnyMoves = [...movesByGroup.values()].some((moves) => moves.length > 0);
+      if (!hasAnyMoves) {
+        movesetNotice = `<p class="moveset-status">No moveset data is available for ${escapeHtml(pokemon.name)} in ${escapeHtml(gameSet.name)}.</p>`;
+      }
+    }
+  }
+
+  const movesetAvailable = [...movesByGroup.values()].some((moves) => moves.length > 0);
   const activeGroup = moveGroups.find((group) => group.key === selectedMoveCategory) || moveGroups[0];
   const currentMoves = movesByGroup.get(activeGroup.key) || [];
 
   const rowsHtml = currentMoves.length
     ? currentMoves
         .map((entry) => {
-          const [moveId, levelValue] = entry.split('-');
+          const [moveId, ...valueParts] = entry.split('-');
+          const levelValue = valueParts.join('-');
           const move = movesLookup[moveId];
           if (!move) {
             return `<tr><td>${escapeHtml(levelValue || entry)}</td><td data-move-id="${escapeHtml(moveId)}">${escapeHtml(moveId)}</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>`;
@@ -4798,22 +5043,15 @@ function renderMovesetSection(pokemon) {
         .join('')
     : `<tr><td colspan="10" class="moveset-empty">No moves available for this category.</td></tr>`;
 
-  const tabButtons = moveGroups
+  const categoryTabs = moveGroups
     .map((group) => {
       const hasMoves = movesByGroup.get(group.key).length > 0;
       return `<button type="button" class="moveset-tab ${activeGroup.key === group.key ? 'active' : ''}${hasMoves ? '' : ' disabled'}" data-category="${group.key}">${group.label}</button>`;
     })
     .join('');
 
-  return `
-    <section class="moveset-card stats-card">
-      <div class="section-header">
-        <div>
-          <h2>Moveset</h2>
-          <span class="small">Entries are currently shown for Scarlet and Violet move-learning data.</span>
-        </div>
-      </div>
-      <div class="moveset-tabs">${tabButtons}</div>
+  const tableHtml = movesetAvailable && gameSet
+    ? `<div class="moveset-tabs">${categoryTabs}</div>
       <div class="moveset-table-wrap">
         <table class="moveset-table">
           <thead>
@@ -4829,10 +5067,23 @@ function renderMovesetSection(pokemon) {
               <th>Priority</th>
               <th>Target</th>
             </tr>
-            </thead>
-            <tbody>${rowsHtml}</tbody>
+          </thead>
+          <tbody>${rowsHtml}</tbody>
         </table>
+      </div>`
+    : '';
+
+  return `
+    <section class="moveset-card stats-card">
+      <div class="section-header">
+        <div>
+          <h2>Moveset</h2>
+        </div>
       </div>
+      <div class="moveset-generation-tabs" role="group" aria-label="Moveset generation">${generationTabs}</div>
+      ${gameSetTabs}
+      ${movesetNotice}
+      ${tableHtml}
     </section>
   `;
 }
