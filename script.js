@@ -1091,31 +1091,64 @@ async function loadGenerationMovesetData(generation) {
 function parseGenerationMoveset(rows) {
   const headerRow = rows[1] || [];
   const gameHeaderRow = rows[0] || [];
-  const groupStarts = headerRow.reduce((starts, header, index) => {
-    const normalizedHeader = String(header || '').toLowerCase().replace(/[^a-z]/g, '');
-    if (normalizedHeader === 'levelup') starts.push(index);
+  const normalizeHeader = (header) => String(header || '').toLowerCase().replace(/[^a-z]/g, '');
+  const categoryByHeader = {
+    levelup: { key: 'levelUp', label: 'Level-Up' },
+    tm: { key: 'tm', label: 'TM' },
+    hm: { key: 'hm', label: 'HM' },
+    tr: { key: 'tr', label: 'TR' },
+    egg: { key: 'egg', label: 'Egg' },
+    eggmove: { key: 'egg', label: 'Egg' },
+    ev: { key: 'evolution', label: 'EV' },
+    evolution: { key: 'evolution', label: 'EV' },
+    rm: { key: 'reminder', label: 'Reminder' },
+    reminder: { key: 'reminder', label: 'Reminder' },
+    tu: { key: 'tutor', label: 'Move Tutor' },
+    tutor: { key: 'tutor', label: 'Move Tutor' }
+  };
+  const groupStarts = gameHeaderRow.reduce((starts, name, index) => {
+    if (index > 0 && String(name || '').trim()) starts.push(index);
     return starts;
   }, []);
 
+  if (!groupStarts.length) {
+    throw new Error('Generation moveset sheet has no game groups');
+  }
+
   return groupStarts.map((start, groupIndex) => {
     const name = String(gameHeaderRow[start] || '').trim() || `Game Set ${groupIndex + 1}`;
+    const end = groupStarts[groupIndex + 1] ?? headerRow.length;
+    const columns = [];
+    for (let index = start; index < end; index += 1) {
+      const header = normalizeHeader(headerRow[index]);
+      if (!header) continue;
+      const category = categoryByHeader[header];
+      if (!category) {
+        throw new Error(`Generation moveset group "${name}" has an unsupported category header: ${headerRow[index]}`);
+      }
+      if (columns.some((column) => column.category.key === category.key)) {
+        throw new Error(`Generation moveset group "${name}" has duplicate ${category.label} columns`);
+      }
+      columns.push({ category, index });
+    }
+    if (!columns.some((column) => column.category.key === 'levelUp')) {
+      throw new Error(`Generation moveset group "${name}" has no Level Up column`);
+    }
     const pokemon = new Map();
     rows.slice(2).forEach((row) => {
       const pokemonName = String(row[0] || '').trim();
       if (!pokemonName) return;
-      const moves = {
-        levelUp: String(row[start] || '').trim(),
-        tm: String(row[start + 1] || '').trim(),
-        egg: String(row[start + 2] || '').trim(),
-        evolution: String(row[start + 3] || '').trim(),
-        reminder: String(row[start + 4] || '').trim()
-      };
+      const moves = Object.fromEntries(columns.map(({ category, index }) => [
+        category.key,
+        String(row[index] || '').trim()
+      ]));
       pokemon.set(normalizePokemonName(pokemonName), moves);
     });
     return {
       key: `set-${groupIndex}`,
       name,
       tabLabel: getMovesetGameTabLabel(name),
+      categories: columns.map((column) => column.category),
       pokemon
     };
   });
@@ -1124,27 +1157,34 @@ function parseGenerationMoveset(rows) {
 function getMovesetGameTabLabel(name) {
   const aliases = {
     'red blue': 'RB',
-    yellow: 'Yellow',
+    'red green blue': 'RB',
+    yellow: 'Y',
     'gold silver': 'GS',
-    crystal: 'Crystal',
+    crystal: 'C',
     'ruby sapphire': 'RS',
-    emerald: 'Emerald',
+    emerald: 'E',
     'fire red leaf green': 'FRLG',
+    'firered leafgreen': 'FRLG',
     'diamond pearl': 'DP',
-    platinum: 'PT',
+    platinum: 'Pt',
     'heart gold soul silver': 'HGSS',
+    'heargold soulsilver': 'HGSS',
     'black white': 'BW',
     'black 2 white 2': 'B2W2',
+    'black2 white2': 'B2W2',
     'x y': 'XY',
     'omega ruby alpha sapphire': 'ORAS',
+    'omegaruby alphasapphire': 'ORAS',
     'sun moon': 'SM',
     'ultra sun ultra moon': 'USUM',
+    'ultrasun ultramoon': 'USUM',
     'lets go pikachu eevee': 'LGPE',
-    'sword shield': 'SwSh',
+    'sword shield': 'SWSH',
     'brilliant diamond shining pearl': 'BDSP',
+    'brilliantdiamond shiningpearl': 'BDSP',
     'legends arceus': 'PLA',
     'scarlet violet': 'SV',
-    'legends z a': 'ZA'
+    'legends z a': 'PLZA'
   };
   return aliases[normalizeGameKey(name)] || name;
 }
@@ -1156,7 +1196,7 @@ function loadMovesetGeneration(generation) {
   movesetGenerationData[generation] = { status: 'loading', gamesets: [] };
   refreshPokemonMoveset();
   const promise = loadCachedSheetRows(
-    `moveset-generation-${generation}`,
+    `moveset-generation-categories-v2-${generation}`,
     () => loadGenerationMovesetData(generation)
   ).then((rows) => {
     movesetGenerationData[generation] = {
@@ -1727,7 +1767,7 @@ function buildMovesLookup(rows) {
 }
 
 function buildMoveLearnersLookup(gameset) {
-  const categories = ['levelUp', 'tm', 'egg', 'evolution', 'reminder'];
+  const categories = gameset.categories.map((category) => category.key);
   const lookup = {};
   const pokemonByName = new Map(allPokemon.map((pokemon) => [
     normalizePokemonName(pokemon.name),
@@ -2105,16 +2145,17 @@ function closeTeamDropdowns() {
 }
 
 function getPokemonTeamMoves(pokemon) {
-  const categoryLabels = [
-    ['levelUp', 'Level-Up'],
-    ['tm', 'TM / HM'],
-    ['egg', 'Egg'],
-    ['evolution', 'Evolution'],
-    ['reminder', 'Reminder']
+  const gameset = movesetGenerationData[9]?.gamesets[0];
+  const categoryLabels = gameset?.categories || [
+    { key: 'levelUp', label: 'Level-Up' },
+    { key: 'tm', label: 'TM' },
+    { key: 'egg', label: 'Egg' },
+    { key: 'evolution', label: 'Evolution' },
+    { key: 'reminder', label: 'Reminder' }
   ];
   const seen = new Set();
-  return categoryLabels.flatMap(([category, label]) => (
-    String(getPokemonMovesFromDefaultGameset(pokemon)[category] || '')
+  return categoryLabels.flatMap(({ key, label }) => (
+    String(getPokemonMovesFromDefaultGameset(pokemon)[key] || '')
       .split('|')
       .map((entry) => entry.trim())
       .filter(Boolean)
@@ -2478,13 +2519,13 @@ function renderPokemonComparison() {
     return;
   }
   const selected = getComparePokemon();
-  const moveGroups = [
-    ['levelUp', 'Level-Up'],
-    ['tm', 'TM'],
-    ['egg', 'Egg'],
-    ['evolution', 'Evolution'],
-    ['reminder', 'Reminder']
-  ];
+  const moveGroups = (movesetGenerationData[9]?.gamesets[0]?.categories || [
+    { key: 'levelUp', label: 'Level-Up' },
+    { key: 'tm', label: 'TM' },
+    { key: 'egg', label: 'Egg' },
+    { key: 'evolution', label: 'Evolution' },
+    { key: 'reminder', label: 'Reminder' }
+  ]).map(({ key, label }) => [key, label]);
   const detailTabs = [
     ['basic', 'Basic'],
     ['stats', 'Stats'],
@@ -3070,7 +3111,10 @@ function renderMoveTarget(targetValue) {
 function formatMoveLearningMethod(category, learnedAs) {
   const method = String(learnedAs || '').trim();
   if (category === 'levelUp') return `Level ${method || '—'}`;
-  if (category === 'tm') return /HM/i.test(method) ? 'HM' : 'TM';
+  if (category === 'tm') return 'TM';
+  if (category === 'hm') return 'HM';
+  if (category === 'tr') return 'TR';
+  if (category === 'tutor') return 'Move Tutor';
   if (category === 'egg') return /EM/i.test(method) ? 'Egg Move' : method || 'Egg Move';
   if (category === 'evolution') return /EV/i.test(method) ? 'Evolution' : method || 'Evolution';
   if (category === 'reminder') return /R/i.test(method) ? 'Reminder' : method || 'Reminder';
@@ -3078,12 +3122,15 @@ function formatMoveLearningMethod(category, learnedAs) {
 }
 
 function renderMoveLearnersSection(move) {
-  const groups = [
+  let groups = [
     { key: 'levelUp', label: 'Level-Up' },
-    { key: 'tm', label: 'TM / HM' },
+    { key: 'tm', label: 'TM' },
+    { key: 'hm', label: 'HM' },
+    { key: 'tr', label: 'TR' },
     { key: 'egg', label: 'Egg' },
     { key: 'evolution', label: 'Evolution' },
-    { key: 'reminder', label: 'Reminder' }
+    { key: 'reminder', label: 'Reminder' },
+    { key: 'tutor', label: 'Move Tutor' }
   ];
   const generationTabs = Array.from({ length: 9 }, (_, index) => index + 1)
     .map((generation) => `<button type="button" class="moveset-tab moveset-generation-tab move-learners-generation-tab${selectedMoveLearnerGeneration === generation ? ' active' : ''}" data-generation="${generation}" aria-pressed="${selectedMoveLearnerGeneration === generation}">Gen ${generation}</button>`)
@@ -3105,6 +3152,7 @@ function renderMoveLearnersSection(move) {
     gameSet = generationData.gamesets.find((item) => item.key === selectedGamesetKey)
       || generationData.gamesets[0];
     selectedMoveLearnerGamesetByGeneration[selectedMoveLearnerGeneration] = gameSet.key;
+    groups = gameSet.categories;
     if (generationData.gamesets.length > 1) {
       gameSetTabs = `<div class="moveset-gameset-tabs" role="group" aria-label="Generation ${selectedMoveLearnerGeneration} games">${generationData.gamesets.map((item) => `<button type="button" class="moveset-tab move-learners-gameset-tab${gameSet.key === item.key ? ' active' : ''}" data-gameset="${escapeHtml(item.key)}" aria-pressed="${gameSet.key === item.key}">${escapeHtml(item.tabLabel)}</button>`).join('')}</div>`;
     } else {
@@ -3115,6 +3163,7 @@ function renderMoveLearnersSection(move) {
   }
 
   const activeCategory = groups.find((group) => group.key === selectedMoveLearnerCategory) || groups[0];
+  if (activeCategory) selectedMoveLearnerCategory = activeCategory.key;
   const learners = learnersByCategory[activeCategory.key] || [];
   const rows = learners.length
     ? learners.map(({ pokemon, learnedAs }) => `
@@ -4950,12 +4999,15 @@ function renderPokedexSection(pokemon) {
 }
 
 function renderMovesetSection(pokemon) {
-  const moveGroups = [
+  let moveGroups = [
     { key: 'levelUp', label: 'Level-Up' },
     { key: 'tm', label: 'TM' },
+    { key: 'hm', label: 'HM' },
+    { key: 'tr', label: 'TR' },
     { key: 'egg', label: 'Egg' },
     { key: 'evolution', label: 'EV' },
-    { key: 'reminder', label: 'Reminder' }
+    { key: 'reminder', label: 'Reminder' },
+    { key: 'tutor', label: 'Move Tutor' }
   ];
 
   const generationTabs = Array.from({ length: 9 }, (_, index) => index + 1)
@@ -4978,6 +5030,8 @@ function renderMovesetSection(pokemon) {
     gameSet = generationData.gamesets.find((item) => item.key === selectedGamesetKey)
       || generationData.gamesets[0];
     selectedMovesetGamesetByGeneration[selectedMovesetGeneration] = gameSet.key;
+    moveGroups = gameSet.categories;
+    movesByGroup = new Map(moveGroups.map((group) => [group.key, []]));
     if (generationData.gamesets.length > 1) {
       gameSetTabs = `<div class="moveset-gameset-tabs" role="group" aria-label="Generation ${selectedMovesetGeneration} games">${generationData.gamesets.map((item) => `<button type="button" class="moveset-tab moveset-gameset-tab${gameSet.key === item.key ? ' active' : ''}" data-gameset="${escapeHtml(item.key)}" aria-pressed="${gameSet.key === item.key}">${escapeHtml(item.tabLabel)}</button>`).join('')}</div>`;
     } else {
@@ -5004,6 +5058,7 @@ function renderMovesetSection(pokemon) {
 
   const movesetAvailable = [...movesByGroup.values()].some((moves) => moves.length > 0);
   const activeGroup = moveGroups.find((group) => group.key === selectedMoveCategory) || moveGroups[0];
+  if (activeGroup) selectedMoveCategory = activeGroup.key;
   const currentMoves = movesByGroup.get(activeGroup.key) || [];
 
   const rowsHtml = currentMoves.length
