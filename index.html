@@ -16,6 +16,7 @@
       <div class="hero-actions">
         <div class="hero-buttons">
           <button id="randomButton" class="button button-primary">Random Pokémon</button>
+          <button id="collectionButton" type="button" class="button sidebar-toggle-button">Collection</button>
           <button id="sidebarToggleButton" type="button" class="button sidebar-toggle-button" aria-expanded="true">Hide list & filters</button>
           <button id="profileButton" type="button" class="button profile-button">Log in</button>
         </div>
@@ -416,6 +417,7 @@
 
   <nav id="floatingActions" class="floating-actions" aria-label="Quick actions">
     <button id="floatingRandomButton" type="button" class="button button-primary">Random Pokémon</button>
+    <button id="floatingCollectionButton" type="button" class="button sidebar-toggle-button">Collection</button>
     <button id="floatingSidebarButton" type="button" class="button sidebar-toggle-button">Hide list &amp; filters</button>
     <button id="floatingProfileButton" type="button" class="button profile-button">Log in</button>
   </nav>
@@ -440,6 +442,50 @@
       <button id="authModeToggle" type="button" class="auth-toggle">Create a local profile</button>
     </section>
   </div>
+
+  <dialog id="collectionDialog" class="collection-dialog" aria-labelledby="collectionTitle">
+    <section class="collection-panel">
+      <header class="collection-header">
+        <div>
+          <p class="eyebrow">Pokémon collection</p>
+          <h2 id="collectionTitle">Completion progress</h2>
+          <p class="collection-description">Track your National Pokédex progress. Progress is saved to your signed-in local profile.</p>
+        </div>
+        <button id="collectionClose" type="button" class="auth-close" aria-label="Close collection progress">&times;</button>
+      </header>
+      <section class="collection-summary" aria-label="Collection summary">
+        <div class="collection-progress-row">
+          <div class="collection-progress-item">
+            <div class="collection-progress-heading"><span>Caught</span><strong id="collectionProgressLabel">0% (0 / 0)</strong></div>
+            <div class="collection-progress-track"><div id="collectionProgressFill" class="collection-progress-fill"></div></div>
+          </div>
+          <div class="collection-progress-item collection-shiny-progress">
+            <div class="collection-progress-heading"><span>Shiny</span><strong id="collectionShinyProgressLabel">0% (0 / 0)</strong></div>
+            <div class="collection-progress-track"><div id="collectionShinyProgressFill" class="collection-progress-fill"></div></div>
+          </div>
+        </div>
+        <div id="collectionStatusCounts" class="collection-status-counts"></div>
+      </section>
+      <div class="collection-toolbar">
+        <label class="collection-search-label" for="collectionSearch">Find Pokémon</label>
+        <input id="collectionSearch" type="search" placeholder="Name or Pokédex number" autocomplete="off" />
+        <span class="collection-filter-label">Show</span>
+        <div id="collectionStatusFilter" class="collection-select collection-filter-select" data-collection-filter data-value="all">
+          <button type="button" class="collection-select-trigger" aria-label="Filter collection by status" aria-haspopup="listbox" aria-expanded="false">
+            <span class="collection-select-value">All statuses</span><span class="collection-select-chevron" aria-hidden="true"></span>
+          </button>
+          <div class="collection-select-menu" role="listbox" aria-label="Filter collection by status" hidden>
+            <button type="button" class="collection-select-option" role="option" aria-selected="true" data-collection-option="all">All statuses</button>
+            <button type="button" class="collection-select-option" role="option" aria-selected="false" data-collection-option="unseen">Unseen (U)</button>
+            <button type="button" class="collection-select-option" role="option" aria-selected="false" data-collection-option="seen">Seen (S)</button>
+            <button type="button" class="collection-select-option" role="option" aria-selected="false" data-collection-option="caught">Caught (C)</button>
+          </div>
+        </div>
+      </div>
+      <p id="collectionSaveStatus" class="collection-save-status" role="status" aria-live="polite" hidden></p>
+      <div id="collectionEntries" class="collection-entries"></div>
+    </section>
+  </dialog>
 
   <script src="script.js"></script>
 </body>

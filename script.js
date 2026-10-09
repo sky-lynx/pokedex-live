@@ -91,6 +91,12 @@ const elements = {
   status: document.getElementById('status'),
   details: document.getElementById('details'),
   randomButton: document.getElementById('randomButton'),
+  collectionButton: document.getElementById('collectionButton'),
+  floatingCollectionButton: document.getElementById('floatingCollectionButton'),
+  collectionDialog: document.getElementById('collectionDialog'),
+  collectionEntries: document.getElementById('collectionEntries'),
+  collectionSearch: document.getElementById('collectionSearch'),
+  collectionStatusFilter: document.getElementById('collectionStatusFilter'),
   profileButton: document.getElementById('profileButton'),
   sidebarToggleButton: document.getElementById('sidebarToggleButton'),
   floatingActions: document.getElementById('floatingActions'),
@@ -193,11 +199,17 @@ let abilityDescriptionsLookup = {};
 let movePopupHideTimer = null;
 let movePopupPinned = false;
 let currentUsername = localStorage.getItem('pokedexCurrentUser') || '';
+let collectionDialogReturnFocus = null;
 let authMode = 'login';
 let customFavoriteFilter = 'any';
 let customNoteFilter = 'any';
 let sheetCacheDatabasePromise;
 const PROFILE_STORAGE_KEY = 'pokedexLocalProfiles';
+const COLLECTION_STATUSES = [
+  { key: 'unseen', label: 'Unseen', shortLabel: 'U' },
+  { key: 'seen', label: 'Seen', shortLabel: 'S' },
+  { key: 'caught', label: 'Caught', shortLabel: 'C' }
+];
 const GEN_RANGES = {
   1: [1, 151],
   2: [152, 251],
@@ -216,6 +228,7 @@ window.addEventListener('DOMContentLoaded', () => {
 
 async function initialize() {
   bindProfileControls();
+  bindCollectionControls();
   bindSidebarToggle();
   bindFloatingActions();
   document.addEventListener('pointerover', (event) => {
@@ -253,6 +266,7 @@ async function initialize() {
     renderComparePokemonOptions();
     renderPokemonComparison();
     elements.status.textContent = `Loaded ${allPokemon.length} Pokémon.`;
+    refreshCollectionUI();
     pokemonDataLoaded = true;
   } catch (error) {
     console.error(error);
@@ -580,6 +594,7 @@ function loadMoveDescriptions() {
 
 function bindFloatingActions() {
   elements.floatingRandomButton?.addEventListener('click', () => elements.randomButton?.click());
+  elements.floatingCollectionButton?.addEventListener('click', () => openCollectionDialog(elements.floatingCollectionButton));
   elements.floatingSidebarButton?.addEventListener('click', () => elements.sidebarToggleButton?.click());
   elements.floatingProfileButton?.addEventListener('click', () => elements.profileButton?.click());
 
@@ -767,6 +782,365 @@ function getCurrentProfile() {
   return currentUsername ? getProfiles()[currentUsername] || null : null;
 }
 
+function getCollectionKey(pokemon) {
+  return String(pokemon.group || pokemon.number);
+}
+
+function getCollectionData() {
+  const collection = getCurrentProfile()?.collection;
+  return collection && typeof collection === 'object' ? collection : {};
+}
+
+function getCollectionStatus(pokemon) {
+  return normalizeCollectionStatus(getCollectionData()[getCollectionKey(pokemon)]);
+}
+
+function getCollectionStatusFromData(pokemon, collection) {
+  return normalizeCollectionStatus(collection[getCollectionKey(pokemon)]);
+}
+
+function getShinyCollectionData() {
+  const shiny = getCurrentProfile()?.shiny;
+  return shiny && typeof shiny === 'object' ? shiny : {};
+}
+
+function isPokemonShinyFromData(pokemon, shiny) {
+  return shiny[getCollectionKey(pokemon)] === true;
+}
+
+function normalizeCollectionStatus(status) {
+  if (status === 'registered') return 'caught';
+  return COLLECTION_STATUSES.some((item) => item.key === status) ? status : 'unseen';
+}
+
+function setCollectionStatus(pokemon, status) {
+  if (!COLLECTION_STATUSES.some((item) => item.key === status)) {
+    throw new Error(`Unsupported collection status: ${status}`);
+  }
+  if (!currentUsername) throw new Error('Log in to update collection progress.');
+  const key = getCollectionKey(pokemon);
+  const profiles = getProfiles();
+  const profile = profiles[currentUsername];
+  if (!profile) throw new Error('The active local profile could not be found.');
+  if (!profile.collection || typeof profile.collection !== 'object') profile.collection = {};
+  if (status === 'unseen') delete profile.collection[key];
+  else profile.collection[key] = status;
+  saveProfiles(profiles);
+}
+
+function setPokemonShiny(pokemon, isShiny) {
+  if (!currentUsername) throw new Error('Log in to update shiny collection progress.');
+  const key = getCollectionKey(pokemon);
+  const profiles = getProfiles();
+  const profile = profiles[currentUsername];
+  if (!profile) throw new Error('The active local profile could not be found.');
+  if (!profile.shiny || typeof profile.shiny !== 'object') profile.shiny = {};
+  if (isShiny) profile.shiny[key] = true;
+  else delete profile.shiny[key];
+  saveProfiles(profiles);
+}
+
+function getCollectionSpecies() {
+  return Object.values(groupsByDex)
+    .map((group) => group[0])
+    .filter(Boolean)
+    .sort((left, right) => Number(left.number) - Number(right.number));
+}
+
+function renderCollectionProgress(renderEntries = elements.collectionDialog?.open) {
+  const dialog = elements.collectionDialog;
+  if (!dialog) return;
+  const species = getCollectionSpecies();
+  const collection = getCollectionData();
+  const shiny = getShinyCollectionData();
+  const counts = Object.fromEntries(COLLECTION_STATUSES.map((status) => [status.key, 0]));
+  let shinyCount = 0;
+  species.forEach((pokemon) => {
+    counts[getCollectionStatusFromData(pokemon, collection)] += 1;
+    if (isPokemonShinyFromData(pokemon, shiny)) shinyCount += 1;
+  });
+  const collectedPercent = species.length ? (counts.caught / species.length) * 100 : 0;
+  const collectedPercentLabel = collectedPercent.toFixed(1);
+  const shinyPercent = species.length ? (shinyCount / species.length) * 100 : 0;
+  const shinyPercentLabel = shinyPercent.toFixed(1);
+  const progressFill = dialog.querySelector('#collectionProgressFill');
+  const progressLabel = dialog.querySelector('#collectionProgressLabel');
+  const shinyProgressFill = dialog.querySelector('#collectionShinyProgressFill');
+  const shinyProgressLabel = dialog.querySelector('#collectionShinyProgressLabel');
+  const statusCounts = dialog.querySelector('#collectionStatusCounts');
+  if (progressFill) progressFill.style.width = `${collectedPercent}%`;
+  if (progressLabel) progressLabel.textContent = `${collectedPercentLabel}% (${counts.caught.toLocaleString()} / ${species.length.toLocaleString()})`;
+  if (shinyProgressFill) shinyProgressFill.style.width = `${shinyPercent}%`;
+  if (shinyProgressLabel) shinyProgressLabel.textContent = `${shinyPercentLabel}% (${shinyCount.toLocaleString()} / ${species.length.toLocaleString()})`;
+  if (statusCounts) {
+    statusCounts.innerHTML = COLLECTION_STATUSES
+      .map((status) => `<div class="collection-count"><span>${status.label} (${status.shortLabel})</span><strong>${counts[status.key].toLocaleString()}</strong></div>`)
+      .concat(`<div class="collection-count"><span>Shinies</span><strong>${shinyCount.toLocaleString()}</strong></div>`)
+      .join('');
+  }
+
+  const query = elements.collectionSearch?.value.trim().toLowerCase() || '';
+  const selectedStatus = elements.collectionStatusFilter?.dataset.value || 'all';
+  const visibleSpecies = species.filter((pokemon) => {
+    const status = getCollectionStatusFromData(pokemon, collection);
+    const matchesQuery = !query
+      || String(pokemon.displayName || pokemon.name).toLowerCase().includes(query)
+      || pokemon.name.toLowerCase().includes(query)
+      || String(pokemon.number).toLowerCase().includes(query)
+      || String(pokemon.displayName || '').toLowerCase().includes(query);
+    return matchesQuery && (selectedStatus === 'all' || status === selectedStatus);
+  });
+  if (elements.collectionEntries && renderEntries) {
+    elements.collectionEntries.innerHTML = species.length
+      ? visibleSpecies.length
+        ? visibleSpecies.map((pokemon) => `
+          <div class="collection-entry">
+              <span class="collection-entry-name"><span class="collection-entry-number">#${escapeHtml(pokemon.number)}</span>${escapeHtml(pokemon.displayName || pokemon.name)}${isPokemonShinyFromData(pokemon, shiny) ? '<span class="collection-shiny-symbol" aria-label="Shiny" title="Shiny">✦</span>' : ''}</span>
+            <div class="collection-entry-controls">
+              ${renderCollectionStatusButtons(getCollectionKey(pokemon), getCollectionStatusFromData(pokemon, collection), `Collection status for ${pokemon.displayName || pokemon.name}`, 'collection-entry-status')}
+              <button type="button" class="collection-shiny-button${isPokemonShinyFromData(pokemon, shiny) ? ' active' : ''}" data-collection-shiny="${escapeHtml(getCollectionKey(pokemon))}" aria-pressed="${isPokemonShinyFromData(pokemon, shiny)}" aria-label="Shiny ${escapeHtml(pokemon.displayName || pokemon.name)}">
+                Shiny
+              </button>
+            </div>
+          </div>`).join('')
+        : '<p class="collection-empty">No Pokémon match these search and status filters.</p>'
+      : '<p class="collection-empty">Pokémon data is still loading.</p>';
+  }
+  if (elements.collectionButton) {
+    elements.collectionButton.textContent = currentUsername && species.length
+      ? `Collection ${collectedPercentLabel}%`
+      : 'Collection';
+  }
+  if (elements.floatingCollectionButton) {
+    elements.floatingCollectionButton.textContent = elements.collectionButton?.textContent || 'Collection';
+  }
+}
+
+function openCollectionDialog(trigger) {
+  if (!currentUsername) {
+    openAuthModal('login');
+    return;
+  }
+  if (!elements.collectionDialog || elements.collectionDialog.open) return;
+  collectionDialogReturnFocus = trigger;
+  renderCollectionProgress(true);
+  elements.collectionDialog.showModal();
+  elements.collectionSearch?.focus();
+}
+
+function closeCollectionDialog() {
+  closeCollectionDropdowns();
+  elements.collectionDialog?.close();
+  const returnFocus = collectionDialogReturnFocus;
+  collectionDialogReturnFocus = null;
+  window.setTimeout(() => {
+    if (returnFocus instanceof HTMLElement && returnFocus.isConnected) returnFocus.focus();
+  }, 0);
+}
+
+function bindCollectionControls() {
+  elements.collectionButton?.addEventListener('click', () => openCollectionDialog(elements.collectionButton));
+  document.getElementById('collectionClose')?.addEventListener('click', closeCollectionDialog);
+  elements.collectionDialog?.addEventListener('cancel', (event) => {
+    event.preventDefault();
+    closeCollectionDialog();
+  });
+  elements.collectionDialog?.addEventListener('click', (event) => {
+    if (event.target === elements.collectionDialog) closeCollectionDialog();
+  });
+  elements.collectionSearch?.addEventListener('input', () => renderCollectionProgress(true));
+  elements.collectionDialog?.addEventListener('click', handleCollectionDropdownClick);
+  elements.details?.addEventListener('click', handleCollectionDropdownClick);
+  document.addEventListener('click', (event) => {
+    if (event.target instanceof Element && event.target.closest('.collection-select')) return;
+    closeCollectionDropdowns();
+  });
+  window.addEventListener('resize', () => closeCollectionDropdowns());
+  document.addEventListener('scroll', () => closeCollectionDropdowns(), true);
+  document.addEventListener('keydown', (event) => {
+    const trigger = event.target.closest?.('.collection-select-trigger');
+    if (trigger && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+      event.preventDefault();
+      trigger.click();
+      const dropdown = trigger.closest('.collection-select');
+      const options = [...dropdown.querySelectorAll('[data-collection-option]')];
+      options[event.key === 'ArrowDown' ? 0 : options.length - 1]?.focus();
+      return;
+    }
+
+    const openDropdown = document.querySelector('.collection-select.is-open');
+    if (!openDropdown) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      closeCollectionDropdowns();
+      openDropdown.querySelector('.collection-select-trigger').focus();
+      return;
+    }
+
+    const options = [...openDropdown.querySelectorAll('[data-collection-option]')];
+    const focusedIndex = options.indexOf(document.activeElement);
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      const direction = event.key === 'ArrowDown' ? 1 : -1;
+      const nextIndex = focusedIndex < 0
+        ? (direction > 0 ? 0 : options.length - 1)
+        : (focusedIndex + direction + options.length) % options.length;
+      options[nextIndex]?.focus();
+    } else if (event.key === 'Home' || event.key === 'End') {
+      event.preventDefault();
+      options[event.key === 'Home' ? 0 : options.length - 1]?.focus();
+    }
+  });
+}
+
+function renderCollectionStatusButtons(groupKey, selectedStatus, label, className = '', disabled = false) {
+  return `
+    <div class="collection-status-buttons ${className}" data-collection-group="${escapeHtml(groupKey)}" data-value="${selectedStatus}" role="group" aria-label="${escapeHtml(label)}">
+      ${COLLECTION_STATUSES.map((status) => `<button type="button" class="collection-status-button${selectedStatus === status.key ? ' active' : ''}" data-collection-status="${status.key}" aria-label="${status.label}" aria-pressed="${selectedStatus === status.key}" title="${status.label}"${disabled ? ' disabled' : ''}>${status.shortLabel}</button>`).join('')}
+    </div>`;
+}
+
+function closeCollectionDropdowns(except = null) {
+  document.querySelectorAll('.collection-select.is-open').forEach((dropdown) => {
+    if (dropdown === except) return;
+    dropdown.classList.remove('is-open');
+    dropdown.querySelector('.collection-select-menu').hidden = true;
+    dropdown.querySelector('.collection-select-trigger').setAttribute('aria-expanded', 'false');
+  });
+}
+
+function updateCollectionStatusButtons(dropdown, value) {
+  if (dropdown.hasAttribute('data-collection-filter')) {
+    const option = dropdown.querySelector(`[data-collection-option="${value}"]`);
+    if (!option) return;
+    dropdown.dataset.value = value;
+    dropdown.querySelector('.collection-select-value').textContent = option.textContent;
+    dropdown.querySelectorAll('[data-collection-option]').forEach((item) => {
+      item.setAttribute('aria-selected', String(item === option));
+    });
+    return;
+  }
+  if (!COLLECTION_STATUSES.some((status) => status.key === value)) return;
+  dropdown.dataset.value = value;
+  dropdown.querySelectorAll('[data-collection-status]').forEach((button) => {
+    const isSelected = button.dataset.collectionStatus === value;
+    button.classList.toggle('active', isSelected);
+    button.setAttribute('aria-pressed', String(isSelected));
+  });
+}
+
+function handleCollectionDropdownClick(event) {
+  if (!(event.target instanceof Element)) return;
+  const statusButton = event.target.closest('[data-collection-status]');
+  if (statusButton) {
+    const statusGroup = statusButton.closest('[data-collection-group]');
+    const pokemon = groupsByDex[statusGroup.dataset.collectionGroup]?.[0];
+    if (!pokemon) return;
+    try {
+      setCollectionStatus(pokemon, statusButton.dataset.collectionStatus);
+      document.querySelectorAll('.collection-entry-status').forEach((entryStatus) => {
+        if (entryStatus.dataset.collectionGroup === statusGroup.dataset.collectionGroup) {
+          updateCollectionStatusButtons(entryStatus, statusButton.dataset.collectionStatus);
+        }
+      });
+      const saveStatus = elements.collectionDialog.querySelector('#collectionSaveStatus');
+      if (saveStatus) {
+        saveStatus.textContent = '';
+        saveStatus.hidden = true;
+      }
+      refreshCollectionUI(pokemon);
+      const statusFilter = elements.collectionStatusFilter?.dataset.value || 'all';
+      const query = elements.collectionSearch?.value.trim().toLowerCase() || '';
+      const displayName = String(pokemon.displayName || pokemon.name).toLowerCase();
+      const remainsVisible = (statusFilter === 'all' || getCollectionStatus(pokemon) === statusFilter)
+        && (!query || displayName.includes(query)
+          || pokemon.name.toLowerCase().includes(query)
+          || String(pokemon.number).toLowerCase().includes(query));
+      if (elements.collectionDialog.open && !remainsVisible) renderCollectionProgress(true);
+    } catch (error) {
+      console.error('Could not update Pokémon collection progress.', error);
+      const saveStatus = elements.collectionDialog.querySelector('#collectionSaveStatus');
+      if (saveStatus) {
+        saveStatus.textContent = 'Could not save collection status. Check browser storage availability.';
+        saveStatus.hidden = false;
+      }
+    }
+    return;
+  }
+
+  const shinyToggle = event.target.closest('[data-collection-shiny]');
+  if (shinyToggle) {
+    const pokemon = groupsByDex[shinyToggle.dataset.collectionShiny]?.[0];
+    if (!pokemon) return;
+    try {
+      setPokemonShiny(pokemon, shinyToggle.getAttribute('aria-pressed') !== 'true');
+      const saveStatus = elements.collectionDialog.querySelector('#collectionSaveStatus');
+      if (saveStatus) {
+        saveStatus.textContent = '';
+        saveStatus.hidden = true;
+      }
+      renderCollectionProgress(true);
+    } catch (error) {
+      console.error('Could not update shiny collection progress.', error);
+      const saveStatus = elements.collectionDialog.querySelector('#collectionSaveStatus');
+      if (saveStatus) {
+        saveStatus.textContent = 'Could not save shiny status. Check browser storage availability.';
+        saveStatus.hidden = false;
+      }
+    }
+    return;
+  }
+
+  const trigger = event.target.closest('.collection-select-trigger');
+  if (trigger) {
+    if (trigger.disabled) return;
+    const dropdown = trigger.closest('.collection-select');
+    const isOpening = !dropdown.classList.contains('is-open');
+    closeCollectionDropdowns(dropdown);
+    dropdown.classList.toggle('is-open', isOpening);
+    const menu = dropdown.querySelector('.collection-select-menu');
+    menu.hidden = !isOpening;
+    trigger.setAttribute('aria-expanded', String(isOpening));
+    if (isOpening) {
+      const bounds = trigger.getBoundingClientRect();
+      const menuHeight = Math.min(menu.scrollHeight, window.innerHeight - 24);
+      const spaceBelow = window.innerHeight - bounds.bottom;
+      const top = spaceBelow >= menuHeight || bounds.top < menuHeight
+        ? Math.min(bounds.bottom + 5, window.innerHeight - menuHeight - 12)
+        : Math.max(12, bounds.top - menuHeight - 5);
+      menu.style.left = `${Math.max(12, Math.min(bounds.left, window.innerWidth - bounds.width - 12))}px`;
+      menu.style.top = `${top}px`;
+      menu.style.width = `${bounds.width}px`;
+    }
+    return;
+  }
+
+  const option = event.target.closest('[data-collection-option]');
+  if (!option) return;
+  if (!currentUsername) {
+    openAuthModal('login');
+    return;
+  }
+  const dropdown = option.closest('.collection-select');
+  const value = option.dataset.collectionOption;
+  updateCollectionStatusButtons(dropdown, value);
+  closeCollectionDropdowns();
+
+  if (dropdown.hasAttribute('data-collection-filter')) {
+    renderCollectionProgress(true);
+    dropdown.querySelector('.collection-select-trigger').focus();
+    return;
+  }
+}
+
+function refreshCollectionUI(changedPokemon = null) {
+  renderCollectionProgress(changedPokemon ? false : undefined);
+  if (selectedPokemon && (!changedPokemon || selectedPokemon.group === changedPokemon.group)) {
+    const selectedControl = elements.details.querySelector('.pokemon-collection-status');
+    if (selectedControl) updateCollectionStatusButtons(selectedControl, getCollectionStatus(selectedPokemon));
+  }
+}
+
 function getPokemonKey(pokemon) {
   return pokemon.formKey || `${pokemon.number}|${normalizePokemonName(pokemon.name)}`;
 }
@@ -784,6 +1158,7 @@ function bindProfileControls() {
     if (currentUsername) {
       currentUsername = '';
       localStorage.removeItem('pokedexCurrentUser');
+      closeCollectionDialog();
       updateProfileButton();
       applyFilter();
       applyMoveFilters();
@@ -792,6 +1167,7 @@ function bindProfileControls() {
       if (selectedMove) refreshMovePersonalTools(selectedMove);
       if (selectedAbility) refreshAbilityPersonalTools(selectedAbility);
       if (selectedDex === 'team') renderTeamBuilder();
+      refreshCollectionUI();
       return;
     }
     openAuthModal('login');
@@ -856,7 +1232,7 @@ function handleAuthSubmit(event) {
       if (message) message.textContent = 'That username already exists on this browser.';
       return;
     }
-    profiles[username] = { password, favorites: [], notes: {}, team: [] };
+    profiles[username] = { password, favorites: [], notes: {}, team: [], collection: {}, shiny: {} };
     saveProfiles(profiles);
   } else if (!profiles[username] || profiles[username].password !== password) {
     if (message) message.textContent = 'Username or password is incorrect.';
@@ -875,6 +1251,7 @@ function handleAuthSubmit(event) {
   if (selectedMove) refreshMovePersonalTools(selectedMove);
   if (selectedAbility) refreshAbilityPersonalTools(selectedAbility);
   if (selectedDex === 'team') renderTeamBuilder();
+  refreshCollectionUI();
 }
 
 function resetFilters() {
@@ -1095,6 +1472,7 @@ function parseGenerationMoveset(rows) {
   const categoryByHeader = {
     levelup: { key: 'levelUp', label: 'Level-Up' },
     tm: { key: 'tm', label: 'TM' },
+    tmtr: { key: 'tm', label: 'TM' },
     hm: { key: 'hm', label: 'HM' },
     tr: { key: 'tr', label: 'TR' },
     egg: { key: 'egg', label: 'Egg' },
@@ -1104,7 +1482,13 @@ function parseGenerationMoveset(rows) {
     rm: { key: 'reminder', label: 'Reminder' },
     reminder: { key: 'reminder', label: 'Reminder' },
     tu: { key: 'tutor', label: 'Move Tutor' },
-    tutor: { key: 'tutor', label: 'Move Tutor' }
+    tutor: { key: 'tutor', label: 'Move Tutor' },
+    special: { key: 'special', label: 'Special' },
+    specialsp: { key: 'special', label: 'Special' },
+    formchange: { key: 'special', label: 'Special' },
+    formchangefc: { key: 'special', label: 'Special' },
+    formchanges: { key: 'special', label: 'Special' },
+    fc: { key: 'special', label: 'Special' }
   };
   const groupStarts = gameHeaderRow.reduce((starts, name, index) => {
     if (index > 0 && String(name || '').trim()) starts.push(index);
@@ -1140,7 +1524,9 @@ function parseGenerationMoveset(rows) {
       if (!pokemonName) return;
       const moves = Object.fromEntries(columns.map(({ category, index }) => [
         category.key,
-        String(row[index] || '').trim()
+        category.key === 'special'
+          ? String(row[index] || '').trim().replace(/-FC(?=$|[|])/g, '-SP')
+          : String(row[index] || '').trim()
       ]));
       pokemon.set(normalizePokemonName(pokemonName), moves);
     });
@@ -1764,6 +2150,10 @@ function buildMovesLookup(rows) {
     };
     return lookup;
   }, {});
+}
+
+function isSwordShieldGameset(gameSet) {
+  return ['sword shield', 'swsh'].includes(normalizeGameKey(gameSet?.name));
 }
 
 function buildMoveLearnersLookup(gameset) {
@@ -3110,7 +3500,12 @@ function renderMoveTarget(targetValue) {
 
 function formatMoveLearningMethod(category, learnedAs) {
   const method = String(learnedAs || '').trim();
-  if (category === 'levelUp') return `Level ${method || '—'}`;
+  if (category === 'levelUp') {
+    const match = method.match(/^(\d+)(?:-M(\d+))?$/);
+    return match
+      ? `Level ${match[1]}${match[2] ? ` · Mastery ${match[2]}` : ''}`
+      : `Level ${method || '—'}`;
+  }
   if (category === 'tm') return 'TM';
   if (category === 'hm') return 'HM';
   if (category === 'tr') return 'TR';
@@ -4740,10 +5135,17 @@ function renderPersonalTools(item, itemType = 'pokemon') {
   const isFavorite = Boolean(profile?.favorites?.includes(key));
   const note = profile?.notes?.[key] || '';
   const noteId = `${itemType}PersonalNote`;
+  const collectionStatus = itemType === 'pokemon'
+    ? `<div class="collection-personal-status">
+        <span class="collection-control-label">Collection status</span>
+        ${renderCollectionStatusButtons(getCollectionKey(item), getCollectionStatus(item), `Collection status for ${item.displayName || item.name}`, 'pokemon-collection-status', !currentUsername)}
+      </div>`
+    : '';
   return `
     <section class="personal-tools${currentUsername ? '' : ' locked'}" aria-label="Personal profile tools">
       <div class="personal-tool-panel favorite-panel">
         <button type="button" class="favorite-button${isFavorite ? ' active' : ''}"${currentUsername ? '' : ' disabled'}>${isFavorite ? '★ Favorited' : '☆ Favorite'}</button>
+        ${collectionStatus}
       </div>
       <div class="personal-tool-panel note-panel">
         <div class="note-editor">
@@ -5049,6 +5451,11 @@ function renderMovesetSection(pokemon) {
           .map((entry) => entry.trim())
           .filter(Boolean)
       ]));
+      if (selectedMovesetGeneration === 8 && isSwordShieldGameset(gameSet)) {
+        moveGroups = moveGroups
+          .filter((group) => group.key !== 'reminder');
+        movesByGroup.delete('reminder');
+      }
       const hasAnyMoves = [...movesByGroup.values()].some((moves) => moves.length > 0);
       if (!hasAnyMoves) {
         movesetNotice = `<p class="moveset-status">No moveset data is available for ${escapeHtml(pokemon.name)} in ${escapeHtml(gameSet.name)}.</p>`;
@@ -5060,15 +5467,23 @@ function renderMovesetSection(pokemon) {
   const activeGroup = moveGroups.find((group) => group.key === selectedMoveCategory) || moveGroups[0];
   if (activeGroup) selectedMoveCategory = activeGroup.key;
   const currentMoves = movesByGroup.get(activeGroup.key) || [];
+  const normalizedGamesetName = normalizeGameKey(gameSet?.name);
+  const hasMasteryColumn = selectedMovesetGeneration === 8
+    ? /legends arceus/.test(normalizedGamesetName) || normalizedGamesetName === 'pla'
+    : selectedMovesetGeneration === 9
+      && (/legends z a/.test(normalizedGamesetName) || ['za', 'plza'].includes(normalizedGamesetName));
 
   const rowsHtml = currentMoves.length
     ? currentMoves
         .map((entry) => {
           const [moveId, ...valueParts] = entry.split('-');
-          const levelValue = valueParts.join('-');
+          const encodedLevel = valueParts.join('-');
+          const masteryMatch = encodedLevel.match(/^(\d+)-M(\d+)$/);
+          const levelValue = masteryMatch ? masteryMatch[1] : encodedLevel;
+          const masteryValue = masteryMatch?.[2] || '';
           const move = movesLookup[moveId];
           if (!move) {
-            return `<tr><td>${escapeHtml(levelValue || entry)}</td><td data-move-id="${escapeHtml(moveId)}">${escapeHtml(moveId)}</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>`;
+            return `<tr><td>${escapeHtml(levelValue || entry)}</td>${hasMasteryColumn ? `<td>${escapeHtml(masteryValue || '—')}</td>` : ''}<td data-move-id="${escapeHtml(moveId)}">${escapeHtml(moveId)}</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td>`;
           }
 
           const moveName = escapeHtml(move.name || moveId);
@@ -5077,49 +5492,46 @@ function renderMovesetSection(pokemon) {
           const movePP = escapeHtml(move.pp || '—');
           const movePower = escapeHtml(move.power || '—');
           const moveAccuracy = escapeHtml(move.accuracy || '—');
-          const moveCrit = escapeHtml(move.critRate || '—');
-          const movePriority = escapeHtml(move.priority || '—');
           const moveTarget = escapeHtml(move.target || '—');
 
           return `
             <tr>
               <td>${escapeHtml(levelValue || '-')}</td>
+              ${hasMasteryColumn ? `<td>${escapeHtml(masteryValue || '—')}</td>` : ''}
               <td class="move-name" data-move-id="${escapeHtml(moveId)}"><button type="button" class="dex-navigation-link move-navigation-link" data-move-id="${escapeHtml(moveId)}">${moveName}</button></td>
               <td>${moveType}</td>
               <td>${moveCategory}</td>
               <td>${movePP}</td>
               <td>${movePower}</td>
               <td>${moveAccuracy}</td>
-              <td>${moveCrit}</td>
-              <td>${movePriority}</td>
               <td>${moveTarget}</td>
             </tr>`;
         })
         .join('')
-    : `<tr><td colspan="10" class="moveset-empty">No moves available for this category.</td></tr>`;
+    : `<tr><td colspan="${hasMasteryColumn ? 9 : 8}" class="moveset-empty">No moves available for this category.</td></tr>`;
 
   const categoryTabs = moveGroups
     .map((group) => {
       const hasMoves = movesByGroup.get(group.key).length > 0;
-      return `<button type="button" class="moveset-tab ${activeGroup.key === group.key ? 'active' : ''}${hasMoves ? '' : ' disabled'}" data-category="${group.key}">${group.label}</button>`;
+      const label = group.key === 'tm' && isSwordShieldGameset(gameSet) ? 'TM/TR' : group.label;
+      return `<button type="button" class="moveset-tab ${activeGroup.key === group.key ? 'active' : ''}${hasMoves ? '' : ' disabled'}" data-category="${group.key}">${label}</button>`;
     })
     .join('');
 
   const tableHtml = movesetAvailable && gameSet
     ? `<div class="moveset-tabs">${categoryTabs}</div>
       <div class="moveset-table-wrap">
-        <table class="moveset-table">
+        <table class="moveset-table${hasMasteryColumn ? ' mastery-moveset-table' : ''}">
           <thead>
             <tr>
               <th>Level</th>
+              ${hasMasteryColumn ? '<th>Mastery</th>' : ''}
               <th>Move</th>
               <th>Type</th>
               <th>Category</th>
               <th>PP</th>
               <th>Power</th>
               <th>Accuracy</th>
-              <th>Crit Rate</th>
-              <th>Priority</th>
               <th>Target</th>
             </tr>
           </thead>
