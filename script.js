@@ -42,6 +42,26 @@ const TYPE_COLORS = {
 };
 
 const TYPE_ORDER = Object.keys(TYPE_COLORS);
+const GRID_TYPE_ABBREVIATIONS = {
+  Normal: 'NRM',
+  Fire: 'FIR',
+  Water: 'WAT',
+  Electric: 'ELE',
+  Grass: 'GRA',
+  Ice: 'ICE',
+  Fighting: 'FIG',
+  Poison: 'POI',
+  Ground: 'GRO',
+  Flying: 'FLY',
+  Psychic: 'PSY',
+  Bug: 'BUG',
+  Rock: 'ROC',
+  Ghost: 'GHO',
+  Dragon: 'DRA',
+  Dark: 'DAR',
+  Steel: 'STE',
+  Fairy: 'FAI'
+};
 const MOVE_GAMESET_INFO = {
   GSC: { generation: 2, label: 'Gold / Silver / Crystal' },
   RSE: { generation: 3, label: 'Ruby / Sapphire / Emerald' },
@@ -126,7 +146,10 @@ const elements = {
   comparePokemonList: document.getElementById('comparePokemonList'),
   comparePokemonCount: document.getElementById('comparePokemonCount'),
   pokemonCompareSlots: document.getElementById('pokemonCompareSlots'),
-  pokemonCompareContent: document.getElementById('pokemonCompareContent')
+  pokemonCompareContent: document.getElementById('pokemonCompareContent'),
+  gridViewButton: document.getElementById('gridViewButton'),
+  pokedexView: document.getElementById('pokedexView'),
+  pokemonGridEntries: document.getElementById('pokemonList')
 };
 
 let allPokemon = [];
@@ -138,6 +161,14 @@ let pendingPokemonScroll = false;
 let activeType = null;
 let selectedPokemon = null;
 let selectedPokemonDetailTab = 'basic';
+let selectedPokemonSpriteGender = 'male';
+let shinySpritesEnabled = false;
+let pokemonSpriteRequestToken = 0;
+let pokemonGridSnapshot = null;
+let pokemonGridElement = null;
+let pokemonGridRenderIndex = 0;
+let pokemonGridRenderToken = 0;
+let pokemonGridViewEnabled = false;
 let selectedDex = 'pokemon';
 let selectedPokemonSortKey = '';
 let selectedPokemonSortDirection = 'none';
@@ -231,6 +262,7 @@ async function initialize() {
   bindCollectionControls();
   bindSidebarToggle();
   bindFloatingActions();
+  bindPokemonGridPicker();
   document.addEventListener('pointerover', (event) => {
     if (event.target instanceof Element && event.target.closest('.ability-box') && !abilityDataLoaded) {
       loadSupportingData();
@@ -651,6 +683,7 @@ function switchDexView(dex) {
     compare: document.getElementById('pokemonCompareTab')
   };
   selectedDex = dex;
+  if (pokemonGridViewEnabled && dex !== 'pokemon') pokemonGridRenderToken += 1;
   Object.entries(views).forEach(([key, view]) => {
     view.hidden = key !== dex;
     tabs[key].classList.toggle('active', key === dex);
@@ -691,6 +724,7 @@ function switchDexView(dex) {
   elements.floatingRandomButton.hidden = !showRandom;
   elements.sidebarToggleButton.hidden = dex === 'compare';
   elements.floatingSidebarButton.hidden = dex === 'compare';
+  if (dex === 'pokemon' && pokemonGridViewEnabled) renderPokemonGridPicker(filteredPokemon);
   initializeDexView(dex);
 }
 
@@ -3785,10 +3819,23 @@ function buildPokemon(rows) {
     };
   };
 
-  return rows
+  const pokemonList = rows
     .slice(dataStartIndex)
     .filter((row) => row.length > 3 && row[0] && !isNaN(parseInt(row[0], 10)))
     .map(buildPokemonEntry);
+  const formsByDex = new Map();
+  pokemonList.forEach((pokemon) => {
+    if (!formsByDex.has(pokemon.number)) formsByDex.set(pokemon.number, []);
+    formsByDex.get(pokemon.number).push(pokemon);
+  });
+  formsByDex.forEach((forms) => {
+    const baseForm = forms.find((pokemon) => pokemon.isPrimary) || forms[0];
+    let formId = 0;
+    forms.forEach((pokemon) => {
+      pokemon.spriteFormId = pokemon === baseForm ? null : ++formId;
+    });
+  });
+  return pokemonList;
 }
 
 function buildGroups(pokemonList) {
@@ -3874,6 +3921,13 @@ function renderTypeFilters(pokemonList) {
       document.querySelectorAll('#pokedexView .filter-mode-panel').forEach((panel) => {
         panel.hidden = panel.id !== `filterModePanel-${mode}`;
       });
+      const clearFiltersButton = document.getElementById('clearFiltersButton');
+      if (clearFiltersButton) {
+        const isSortMode = mode === 'sort';
+        clearFiltersButton.classList.toggle('visually-hidden', isSortMode);
+        clearFiltersButton.inert = isSortMode;
+        clearFiltersButton.setAttribute('aria-hidden', String(isSortMode));
+      }
     });
   });
 
@@ -4246,6 +4300,79 @@ function handleSearch() {
   applyFilter();
 }
 
+function bindPokemonGridPicker() {
+  elements.gridViewButton?.addEventListener('click', () => {
+    pokemonGridViewEnabled = !pokemonGridViewEnabled;
+    elements.pokedexView.classList.toggle('pokedex-grid-view', pokemonGridViewEnabled);
+    elements.gridViewButton.setAttribute('aria-pressed', String(pokemonGridViewEnabled));
+    elements.gridViewButton.textContent = pokemonGridViewEnabled ? 'List' : 'Grid';
+    renderList(filteredPokemon);
+  });
+  elements.pokemonGridEntries?.addEventListener('error', (event) => {
+    if (!(event.target instanceof HTMLImageElement)) return;
+    const image = event.target;
+    if (!image.dataset.fallbackTried) {
+      image.dataset.fallbackTried = 'true';
+      image.src = image.dataset.normalSprite;
+    } else {
+      image.hidden = true;
+    }
+  }, true);
+}
+
+function renderPokemonGridPicker(pokemonList) {
+  if (!elements.pokemonGridEntries) return;
+  const snapshotChanged = !pokemonGridSnapshot
+    || pokemonGridSnapshot.shiny !== shinySpritesEnabled
+    || pokemonGridSnapshot.pokemon.length !== pokemonList.length
+    || pokemonGridSnapshot.pokemon.some((pokemon, index) => pokemon !== pokemonList[index]);
+  if (snapshotChanged) {
+    elements.pokemonGridEntries.replaceChildren();
+    pokemonGridSnapshot = { pokemon: [...pokemonList], shiny: shinySpritesEnabled };
+    pokemonGridElement = document.createElement('div');
+    pokemonGridElement.className = 'pokemon-grid-entries';
+    pokemonGridRenderIndex = 0;
+  }
+  if (pokemonGridElement && !elements.pokemonGridEntries.contains(pokemonGridElement)) {
+    elements.pokemonGridEntries.append(pokemonGridElement);
+  }
+
+  const renderToken = ++pokemonGridRenderToken;
+  const appendBatch = () => {
+    if (renderToken !== pokemonGridRenderToken || !pokemonGridViewEnabled || selectedDex !== 'pokemon' || !pokemonGridElement) return;
+    if (!pokemonList.length) {
+      if (pokemonGridRenderIndex === 0) {
+        pokemonGridElement.innerHTML = '<p class="pokemon-grid-empty">No Pokémon match the current search and filters.</p>';
+        pokemonGridRenderIndex = 1;
+      }
+      return;
+    }
+    const batchSize = 80;
+    const batch = pokemonList.slice(pokemonGridRenderIndex, pokemonGridRenderIndex + batchSize).map((pokemon) => {
+        const spriteBase = getPokemonSpriteBase(pokemon);
+        const index = pokemonIndexLookup.get(pokemon);
+        const normalSprite = `sprites/${spriteBase}.png`;
+        const shinySprite = `sprites/shiny/${spriteBase}.png`;
+        const sprite = shinySpritesEnabled ? shinySprite : normalSprite;
+        const typePills = pokemon.types.filter(Boolean).map((type) => {
+          const color = TYPE_COLORS[type] || '#475569';
+          const abbreviation = GRID_TYPE_ABBREVIATIONS[type] || type.slice(0, 3).toUpperCase();
+          return `<span class="pokemon-grid-type" title="${escapeHtml(type)}" aria-label="${escapeHtml(type)}" style="--grid-type-color:${color}">${escapeHtml(abbreviation)}</span>`;
+        }).join('');
+        return `<button type="button" class="pokemon-grid-card" data-pokemon-index="${index}">
+          <span class="pokemon-grid-dex">#${escapeHtml(pokemon.number)}</span>
+          <img src="${escapeHtml(sprite)}" data-normal-sprite="${escapeHtml(normalSprite)}" alt="" loading="lazy" decoding="async" />
+          <strong>${escapeHtml(pokemon.displayName || pokemon.name)}</strong>
+          <span class="pokemon-grid-types">${typePills}</span>
+        </button>`;
+      }).join('');
+    pokemonGridElement.insertAdjacentHTML('beforeend', batch);
+    pokemonGridRenderIndex += batchSize;
+    if (pokemonGridRenderIndex < pokemonList.length) setTimeout(appendBatch, 0);
+  };
+  appendBatch();
+}
+
 function applyFilter(options = {}) {
   const query = elements.searchInput.value.trim().toLowerCase();
   const all = Object.values(groupsByDex).map((group) => group[0]);
@@ -4454,6 +4581,13 @@ function renderList(pokemonList, options = {}) {
   pokemonListRenderToken = renderToken;
   pendingPokemonScroll = false;
   const scrollTop = elements.pokemonList.scrollTop;
+  elements.pokemonList.classList.toggle('grid-view', pokemonGridViewEnabled);
+  if (pokemonGridViewEnabled) {
+    elements.pokemonList.replaceChildren();
+    renderPokemonGridPicker(pokemonList);
+    return;
+  }
+  pokemonGridRenderToken += 1;
   elements.pokemonList.replaceChildren();
   const renderCard = (pokemon) => {
     const isFavorite = Boolean(profile?.favorites?.includes(getPokemonKey(pokemon)));
@@ -4479,7 +4613,7 @@ function renderList(pokemonList, options = {}) {
       pendingPokemonScroll = false;
       scrollToSelected();
     }
-    if (index < pokemonList.length) requestAnimationFrame(appendBatch);
+    if (index < pokemonList.length) setTimeout(appendBatch, 0);
   };
 
   appendBatch();
@@ -4487,6 +4621,7 @@ function renderList(pokemonList, options = {}) {
 
 function selectPokemon(pokemon) {
   selectedPokemon = pokemon;
+  selectedPokemonSpriteGender = 'male';
   elements.pokemonList.querySelector('.pokemon-card.active')?.classList.remove('active');
   const visiblePokemon = filteredPokemon.find((entry) => entry.group === pokemon.group);
   const visibleIndex = visiblePokemon ? pokemonIndexLookup.get(visiblePokemon) : undefined;
@@ -4605,6 +4740,7 @@ function renderEvolutionSection(pokemon) {
 }
 
 function renderDetails(pokemon) {
+  const formSwitcherScrollLeft = elements.details.querySelector('.form-switcher')?.scrollLeft ?? 0;
   const typesHtml = pokemon.types
     .filter(Boolean)
     .map((type) => renderTypeBadge(type))
@@ -4612,6 +4748,11 @@ function renderDetails(pokemon) {
 
   const groupForms = pokemon.groupForms || [pokemon];
   const formSwitcher = groupForms.length > 1 ? renderFormSwitcher(groupForms, pokemon) : '';
+  const spriteBase = getPokemonSpriteBase(pokemon);
+  const spriteGender = selectedPokemonSpriteGender === 'female' ? 'female' : 'male';
+  const spriteSuffix = spriteGender === 'female' ? '-f' : '';
+  const spriteSrc = `sprites/${spriteBase}${spriteSuffix}.png`;
+  const femaleSpriteSrc = `sprites/${spriteBase}-f.png`;
 
   elements.details.classList.remove('details-placeholder');
   elements.details.innerHTML = `
@@ -4643,9 +4784,25 @@ function renderDetails(pokemon) {
         ].map(([key, label]) => `<button type="button" id="pokemon-tab-${key}" class="pokemon-detail-tab${selectedPokemonDetailTab === key ? ' active' : ''}" role="tab" aria-selected="${selectedPokemonDetailTab === key}" aria-controls="pokemon-panel-${key}" tabindex="${selectedPokemonDetailTab === key ? '0' : '-1'}" data-pokemon-detail-tab="${key}">${label}</button>`).join('')}
       </div>
       <section id="pokemon-panel-basic" class="pokemon-detail-panel${selectedPokemonDetailTab === 'basic' ? ' active' : ''}" role="tabpanel" aria-labelledby="pokemon-tab-basic" data-pokemon-detail-panel="basic"${selectedPokemonDetailTab === 'basic' ? '' : ' hidden'}>
+      <div class="pokemon-detail-tools-row">
+      <section class="pokemon-sprite-card stats-card" data-pokemon-sprite aria-label="Pokémon sprite">
+        <div class="section-header">
+          <div class="pokemon-sprite-heading">
+            <h2>Sprite</h2>
+            <button type="button" class="pokemon-sprite-shiny-button${shinySpritesEnabled ? ' active' : ''}" data-sprite-shiny aria-label="Toggle shiny sprites" aria-pressed="${shinySpritesEnabled}" title="Toggle shiny sprites">✦</button>
+          </div>
+          <div class="pokemon-sprite-controls">
+            <div class="pokemon-sprite-gender is-hidden" data-pokemon-sprite-gender aria-hidden="true">
+              <button type="button" class="pokemon-sprite-gender-button${spriteGender === 'male' ? ' active' : ''}" data-sprite-gender="male" aria-pressed="${spriteGender === 'male'}">Male</button>
+              <button type="button" class="pokemon-sprite-gender-button${spriteGender === 'female' ? ' active' : ''}" data-sprite-gender="female" aria-pressed="${spriteGender === 'female'}">Female</button>
+            </div>
+          </div>
+        </div>
+        <img class="pokemon-sprite-image" data-pokemon-sprite-image src="${escapeHtml(spriteSrc)}" alt="${escapeHtml(`${pokemon.name} ${spriteGender} sprite`)}" fetchpriority="high" />
+      </section>
+      ${renderPersonalTools(pokemon)}
+      </div>
       <div class="detail-header">
-        ${renderPersonalTools(pokemon)}
-
         <div class="ability-section">
           <div class="ability-list">
             ${renderAbilitySection(pokemon.abilities, pokemon.hiddenAbility)}
@@ -4786,6 +4943,9 @@ function renderDetails(pokemon) {
     </div>
   `;
 
+  const formSwitcherContainer = elements.details.querySelector('.form-switcher');
+  if (formSwitcherContainer) formSwitcherContainer.scrollLeft = formSwitcherScrollLeft;
+
   elements.details.querySelector('.mobile-back-button')?.addEventListener('click', () => {
     document.querySelector('.list-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
     elements.searchInput?.focus({ preventScroll: true });
@@ -4793,6 +4953,7 @@ function renderDetails(pokemon) {
 
   bindPersonalToolHandlers(pokemon, elements.details);
   bindPokemonDetailTabs(elements.details);
+  bindPokemonSpriteControls(pokemon, femaleSpriteSrc);
 
   elements.details.querySelectorAll('[data-evolution-pokemon-key]').forEach((button) => {
     button.addEventListener('click', () => {
@@ -5249,6 +5410,77 @@ function renderFormSwitcher(forms, selected) {
         .join('')}
     </div>
   `;
+}
+
+function getPokemonSpriteBase(pokemon) {
+  const dexNumber = Number.parseInt(String(pokemon.number || '').replace(/^#/, ''), 10);
+  const formId = Number(pokemon.spriteFormId);
+  if (!Number.isFinite(dexNumber)) return '';
+  return `${dexNumber}${Number.isInteger(formId) && formId > 0 ? `-${formId}` : ''}`;
+}
+
+function bindPokemonSpriteControls(pokemon, femaleSpriteSrc) {
+  const spriteSection = elements.details.querySelector('[data-pokemon-sprite]');
+  const spriteImage = spriteSection?.querySelector('[data-pokemon-sprite-image]');
+  if (!spriteSection || !spriteImage) return;
+
+  const updateSprite = async () => {
+    const requestToken = ++pokemonSpriteRequestToken;
+    const spriteBase = getPokemonSpriteBase(pokemon);
+    const genderSuffix = selectedPokemonSpriteGender === 'female' ? '-f' : '';
+    const normalSprite = `sprites/${spriteBase}${genderSuffix}.png`;
+    const shinySprite = `sprites/shiny/${spriteBase}${genderSuffix}.png`;
+    let useShinySprite = false;
+
+    if (shinySpritesEnabled) {
+      try {
+        const response = await fetch(shinySprite, { cache: 'force-cache' });
+        useShinySprite = response.ok;
+      } catch (error) {
+        console.error(`Could not check for the shiny sprite for ${pokemon.name}.`, error);
+      }
+    }
+
+    if (requestToken !== pokemonSpriteRequestToken || !spriteSection.isConnected) return;
+    spriteImage.src = useShinySprite ? shinySprite : normalSprite;
+    spriteImage.alt = `${pokemon.name} ${selectedPokemonSpriteGender}${useShinySprite ? ' shiny' : ''} sprite`;
+  };
+
+  fetch(femaleSpriteSrc, { cache: 'force-cache' })
+    .then(async (response) => {
+      if (!response.ok) return;
+      await response.blob();
+      if (spriteSection.isConnected) {
+        const genderControls = spriteSection.querySelector('[data-pokemon-sprite-gender]');
+        genderControls.classList.remove('is-hidden');
+        genderControls.setAttribute('aria-hidden', 'false');
+      }
+    })
+    .catch((error) => {
+      console.error('Could not check for a female Pokémon sprite.', error);
+    });
+
+  const shinyButton = spriteSection.querySelector('[data-sprite-shiny]');
+  shinyButton?.addEventListener('click', () => {
+    shinySpritesEnabled = !shinySpritesEnabled;
+    shinyButton.classList.toggle('active', shinySpritesEnabled);
+    shinyButton.setAttribute('aria-pressed', String(shinySpritesEnabled));
+    updateSprite();
+  });
+
+  spriteSection.querySelectorAll('[data-sprite-gender]').forEach((button) => {
+    button.addEventListener('click', () => {
+      selectedPokemonSpriteGender = button.dataset.spriteGender;
+      updateSprite();
+      spriteSection.querySelectorAll('[data-sprite-gender]').forEach((genderButton) => {
+        const active = genderButton.dataset.spriteGender === selectedPokemonSpriteGender;
+        genderButton.classList.toggle('active', active);
+        genderButton.setAttribute('aria-pressed', String(active));
+      });
+    });
+  });
+
+  updateSprite();
 }
 
 function renderVerticalBar(label, rawValue, max, side = 'center', displayValue = null) {

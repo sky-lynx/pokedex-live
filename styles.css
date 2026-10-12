@@ -353,7 +353,7 @@ button, input {
 .personal-tools {
   position: relative;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 1rem;
   align-items: start;
   margin-top: 1rem;
@@ -399,6 +399,10 @@ button, input {
   align-items: center;
   justify-content: center;
   gap: 1.25rem;
+}
+
+.note-panel {
+  grid-column: 1 / -1;
 }
 
 .favorite-button,
@@ -773,6 +777,125 @@ button, input {
   margin-bottom: 0.5rem;
 }
 
+.pokedex-search-controls {
+  display: flex;
+  align-items: stretch;
+  gap: 0.55rem;
+}
+
+.pokedex-search-controls input {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.grid-view-button {
+  flex: 0 0 auto;
+  padding: 0.65rem 0.9rem;
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  background: rgba(56, 189, 248, 0.12);
+  color: var(--text);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.pokemon-grid-entries {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(4.5rem, 1fr));
+  align-content: start;
+  gap: 0.35rem;
+  min-height: 0;
+  padding: 0.25rem;
+}
+
+.pokemon-grid-card {
+  position: relative;
+  display: grid;
+  grid-template-rows: 1fr auto auto;
+  justify-items: center;
+  align-items: center;
+  gap: 0.2rem;
+  min-width: 0;
+  min-height: 7rem;
+  padding: 0.3rem;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 14px;
+  background: rgba(8, 15, 24, 0.72);
+  color: var(--text);
+  cursor: pointer;
+  text-align: center;
+}
+
+.pokemon-grid-card:hover,
+.pokemon-grid-card:focus-visible {
+  outline: none;
+  border-color: rgba(56, 189, 248, 0.5);
+  background: rgba(56, 189, 248, 0.1);
+}
+
+.pokemon-grid-card img {
+  display: block;
+  width: 2.75rem;
+  height: 2.75rem;
+  object-fit: contain;
+}
+
+.pokemon-grid-card strong {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-size: 0.72rem;
+}
+
+.pokemon-grid-dex {
+  position: absolute;
+  top: 0.3rem;
+  left: 0.35rem;
+  color: var(--text-muted);
+  font-size: 0.62rem;
+  font-weight: 700;
+}
+
+.pokemon-grid-types {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.15rem;
+}
+
+.pokemon-grid-type {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--grid-type-color) 70%, transparent);
+  border-radius: 999px;
+  padding: 0.08rem 0.2rem;
+  background: color-mix(in srgb, var(--grid-type-color) 24%, transparent);
+  font-size: 0.58rem;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+  white-space: normal;
+}
+
+.pokemon-grid-empty {
+  grid-column: 1 / -1;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.pokemon-list.grid-view {
+  display: block;
+  overflow-y: auto;
+  padding: 0.25rem;
+}
+
+@media (min-width: 921px) {
+  .layout.pokedex-grid-view:not(.sidebar-collapsed) {
+    grid-template-columns: minmax(420px, 480px) minmax(0, 1fr);
+  }
+}
+
 .type-buttons {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -932,6 +1055,10 @@ button, input {
   font-size: 0.85rem;
   cursor: pointer;
   transition: transform 0.15s ease, background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.filters-button.visually-hidden {
+  visibility: hidden;
 }
 
 .filters-button:hover {
@@ -3200,7 +3327,6 @@ button, input {
   display: grid;
   gap: 1rem;
   min-width: 0;
-  animation: detail-panel-enter 0.18s ease-out;
 }
 
 .pokemon-detail-panel[hidden] {
@@ -3742,6 +3868,101 @@ button, input {
 .section-header .small {
   color: var(--text-muted);
   font-size: 0.88rem;
+}
+
+.pokemon-sprite-card {
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  min-width: 0;
+  padding: 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 18px;
+  background: rgba(8, 15, 24, 0.72);
+}
+
+.pokemon-detail-tools-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: stretch;
+  gap: 1rem;
+}
+
+.pokemon-detail-tools-row > .personal-tools {
+  align-self: start;
+  margin-top: 0;
+}
+
+.pokemon-sprite-card .section-header {
+  width: 100%;
+}
+
+.pokemon-sprite-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.pokemon-sprite-image {
+  display: block;
+  width: min(10rem, 100%);
+  height: 10rem;
+  object-fit: contain;
+}
+
+.pokemon-sprite-gender {
+  display: flex;
+  min-width: 9.4rem;
+  min-height: 2.5rem;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+
+.pokemon-sprite-gender.is-hidden {
+  visibility: hidden;
+}
+
+.pokemon-sprite-gender-button {
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 999px;
+  padding: 0.4rem 0.8rem;
+  background: rgba(15, 23, 32, 0.88);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.pokemon-sprite-gender-button.active {
+  border-color: rgba(56, 189, 248, 0.4);
+  background: rgba(56, 189, 248, 0.16);
+  color: #bae6fd;
+}
+
+.pokemon-sprite-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.pokemon-sprite-shiny-button {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 2.5rem;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  border-radius: 50%;
+  background: rgba(15, 23, 32, 0.88);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 1.3rem;
+  line-height: 1;
+}
+
+.pokemon-sprite-shiny-button.active {
+  border-color: rgba(251, 191, 36, 0.55);
+  background: rgba(251, 191, 36, 0.16);
+  color: #fbbf24;
 }
 
 .stat-bars {
