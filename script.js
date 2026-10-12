@@ -222,6 +222,8 @@ let teamPokemonRenderToken = 0;
 const TEAM_SIZE = 6;
 const GUEST_TEAM_STORAGE_KEY = 'pokedexGuestTeam';
 const GUEST_TEAM_MOVES_STORAGE_KEY = 'pokedexGuestTeamMoves';
+const GUEST_TEAM_STATS_STORAGE_KEY = 'pokedexGuestTeamStats';
+const TEAM_STAT_KEYS = ['HP', 'ATK', 'DEF', 'SpA', 'SpD', 'SPE'];
 let selectedMoveGen = 9;
 let selectedMoveLearnerCategory = 'levelUp';
 let selectedMoveLearnerGeneration = 9;
@@ -229,6 +231,8 @@ let selectedMoveLearnerGamesetByGeneration = {};
 let abilityDescriptionsLookup = {};
 let movePopupHideTimer = null;
 let movePopupPinned = false;
+let collectionEntriesRenderToken = 0;
+let collectionEntriesRenderFrame = null;
 let currentUsername = localStorage.getItem('pokedexCurrentUser') || '';
 let collectionDialogReturnFocus = null;
 let authMode = 'login';
@@ -411,6 +415,20 @@ async function initialize() {
     addPokemonToTeam(button.dataset.teamAdd);
   });
   elements.teamRoster?.addEventListener('click', (event) => {
+    const statToggle = event.target.closest('[data-team-stat-toggle]');
+    if (statToggle) {
+      const segment = statToggle.closest('.team-stat-segment');
+      const panel = segment?.querySelector('.team-stat-panel');
+      const isOpening = Boolean(panel?.hidden);
+      closeTeamStatPopups();
+      closeTeamDropdowns();
+      if (panel && isOpening) {
+        panel.hidden = false;
+        segment.classList.add('is-stat-open');
+        statToggle.setAttribute('aria-expanded', 'true');
+      }
+      return;
+    }
     const moveToggle = event.target.closest('[data-team-move-toggle]');
     if (moveToggle) {
       const picker = moveToggle.closest('.team-move-picker');
@@ -420,7 +438,38 @@ async function initialize() {
       if (menu && isOpening) {
         menu.hidden = false;
         moveToggle.setAttribute('aria-expanded', 'true');
+        const search = menu.querySelector('.team-move-search');
+        if (search) {
+          search.value = '';
+          filterTeamMoveOptions(menu);
+          search.focus();
+        }
       }
+      return;
+    }
+    const natureToggle = event.target.closest('[data-team-nature-toggle]');
+    if (natureToggle) {
+      const picker = natureToggle.closest('.team-nature-picker');
+      const menu = picker?.querySelector('.team-nature-menu');
+      const isOpening = Boolean(menu?.hidden);
+      closeTeamDropdowns();
+      if (menu && isOpening) {
+        menu.hidden = false;
+        natureToggle.setAttribute('aria-expanded', 'true');
+      }
+      return;
+    }
+    const natureOption = event.target.closest('[data-team-nature-option]');
+    if (natureOption) {
+      const pokemonKey = natureOption.dataset.teamPokemonKey;
+      setTeamStatSetting(pokemonKey, 'nature', null, natureOption.dataset.teamNatureOption);
+      updateTeamStatDisplay(pokemonKey);
+      const picker = natureOption.closest('.team-nature-picker');
+      const menu = picker?.querySelector('.team-nature-menu');
+      const trigger = picker?.querySelector('[data-team-nature-toggle]');
+      if (menu) menu.hidden = true;
+      trigger?.setAttribute('aria-expanded', 'false');
+      trigger?.focus();
       return;
     }
     const moveOption = event.target.closest('[data-team-move-id]');
@@ -466,14 +515,60 @@ async function initialize() {
       if (pokemon) navigateToPokemon(pokemon.number, pokemon.name);
     }
   });
+  elements.teamRoster?.addEventListener('change', (event) => {
+    const input = event.target;
+    if (!(input instanceof HTMLInputElement)) return;
+    const pokemonKey = input.dataset.teamPokemonKey;
+    if (!pokemonKey) return;
+    if (input.matches('[data-team-stat-level]')) {
+      setTeamStatSetting(pokemonKey, 'level', null, input.value);
+    } else if (input.matches('[data-team-stat-iv]')) {
+      setTeamStatSetting(pokemonKey, 'iv', input.dataset.teamStatIv, input.value);
+    } else if (input.matches('[data-team-stat-ev]')) {
+      setTeamStatSetting(pokemonKey, 'ev', input.dataset.teamStatEv, input.value);
+    } else {
+      return;
+    }
+    updateTeamStatDisplay(pokemonKey);
+  });
+  elements.teamRoster?.addEventListener('input', (event) => {
+    const search = event.target.closest('.team-move-search');
+    if (search) filterTeamMoveOptions(search.closest('.team-move-menu'));
+  });
   elements.teamRoster?.addEventListener('keydown', (event) => {
+    const natureTrigger = event.target.closest('[data-team-nature-toggle]');
+    const natureOption = event.target.closest('[data-team-nature-option]');
+    if (event.key === 'Escape' && (natureTrigger || natureOption)) {
+      const picker = (natureTrigger || natureOption).closest('.team-nature-picker');
+      const menu = picker?.querySelector('.team-nature-menu');
+      const menuTrigger = picker?.querySelector('[data-team-nature-toggle]');
+      if (menu && !menu.hidden) {
+        event.preventDefault();
+        menu.hidden = true;
+        menuTrigger?.setAttribute('aria-expanded', 'false');
+        menuTrigger?.focus();
+      }
+      return;
+    }
+    const statToggle = event.target.closest('[data-team-stat-toggle]');
+    const statPanel = event.target.closest('.team-stat-panel');
+    if (event.key === 'Escape' && (statToggle || statPanel)) {
+      const segment = (statToggle || statPanel).closest('.team-stat-segment');
+      if (segment && !segment.querySelector('.team-stat-panel').hidden) {
+        event.preventDefault();
+        closeTeamStatPopup(segment);
+        segment.querySelector('[data-team-stat-toggle]')?.focus();
+      }
+      return;
+    }
     const trigger = event.target.closest('[data-team-form-toggle]');
     const option = event.target.closest('.team-form-option');
     const moveTrigger = event.target.closest('[data-team-move-toggle]');
     const moveOption = event.target.closest('.team-move-option');
-    if (event.key === 'Escape' && (trigger || option || moveTrigger || moveOption)) {
-      if (moveTrigger || moveOption) {
-        const picker = (moveTrigger || moveOption).closest('.team-move-picker');
+    const moveSearch = event.target.closest('.team-move-search');
+    if (event.key === 'Escape' && (trigger || option || moveTrigger || moveOption || moveSearch)) {
+      if (moveTrigger || moveOption || moveSearch) {
+        const picker = (moveTrigger || moveOption || moveSearch).closest('.team-move-picker');
         const menu = picker?.querySelector('.team-move-menu');
         const menuTrigger = picker?.querySelector('[data-team-move-toggle]');
         if (menu && !menu.hidden) {
@@ -502,9 +597,16 @@ async function initialize() {
       (picker?.querySelector('.team-move-option[aria-selected="true"]') || picker?.querySelector('.team-move-option'))?.focus();
       return;
     }
+    if (moveSearch && event.key === 'ArrowDown') {
+      event.preventDefault();
+      moveSearch.closest('.team-move-menu')
+        ?.querySelector('.team-move-option:not([hidden])')
+        ?.focus();
+      return;
+    }
     if (moveOption && ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
       event.preventDefault();
-      const options = [...moveOption.closest('.team-move-menu').querySelectorAll('.team-move-option')];
+      const options = [...moveOption.closest('.team-move-menu').querySelectorAll('.team-move-option:not([hidden])')];
       const currentIndex = options.indexOf(moveOption);
       const nextIndex = event.key === 'Home'
         ? 0
@@ -520,6 +622,25 @@ async function initialize() {
       trigger.closest('.team-form-picker')?.querySelector('.team-form-option')?.focus();
       return;
     }
+    if (natureTrigger && event.key === 'ArrowDown') {
+      event.preventDefault();
+      if (natureTrigger.getAttribute('aria-expanded') !== 'true') natureTrigger.click();
+      const picker = natureTrigger.closest('.team-nature-picker');
+      (picker?.querySelector('.team-nature-option[aria-selected="true"]') || picker?.querySelector('.team-nature-option'))?.focus();
+      return;
+    }
+    if (natureOption && ['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+      event.preventDefault();
+      const options = [...natureOption.closest('.team-nature-menu').querySelectorAll('.team-nature-option')];
+      const currentIndex = options.indexOf(natureOption);
+      const nextIndex = event.key === 'Home'
+        ? 0
+        : event.key === 'End'
+          ? options.length - 1
+          : (currentIndex + (event.key === 'ArrowDown' ? 1 : options.length - 1)) % options.length;
+      options[nextIndex]?.focus();
+      return;
+    }
     if (!option || !['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
     event.preventDefault();
     const options = [...option.closest('.team-form-menu').querySelectorAll('.team-form-option')];
@@ -532,12 +653,18 @@ async function initialize() {
     options[nextIndex]?.focus();
   });
   document.addEventListener('click', (event) => {
+    if (event.target instanceof Element && event.target.closest('.team-stat-segment')) {
+      if (!event.target.closest('.team-nature-picker')) closeTeamDropdowns();
+      return;
+    }
+    closeTeamStatPopups();
     if (event.target instanceof Element && event.target.closest('.team-form-picker, .team-move-picker')) return;
     closeTeamDropdowns();
   });
   document.getElementById('clearTeamButton')?.addEventListener('click', () => {
     saveActiveTeam([]);
     saveActiveTeamMoves({});
+    saveActiveTeamStats({});
     renderTeamBuilder();
   });
   bindDexSwitcher();
@@ -881,6 +1008,66 @@ function getCollectionSpecies() {
     .sort((left, right) => Number(left.number) - Number(right.number));
 }
 
+function cancelCollectionEntriesRender() {
+  collectionEntriesRenderToken += 1;
+  if (collectionEntriesRenderFrame !== null) {
+    cancelAnimationFrame(collectionEntriesRenderFrame);
+    collectionEntriesRenderFrame = null;
+  }
+}
+
+function renderCollectionEntries(species, totalSpecies) {
+  const entries = elements.collectionEntries;
+  if (!entries) return;
+  cancelCollectionEntriesRender();
+  if (!totalSpecies) {
+    entries.innerHTML = '<p class="collection-empty">Pokémon data is still loading.</p>';
+    return;
+  }
+  if (!species.length) {
+    entries.innerHTML = '<p class="collection-empty">No Pokémon match these search and status filters.</p>';
+    return;
+  }
+
+  entries.replaceChildren();
+  const collection = getCollectionData();
+  const shiny = getShinyCollectionData();
+  const token = collectionEntriesRenderToken;
+  const batchSize = 60;
+  let index = 0;
+
+  const appendBatch = () => {
+    if (token !== collectionEntriesRenderToken || !elements.collectionDialog?.open) {
+      collectionEntriesRenderFrame = null;
+      return;
+    }
+    const batch = species.slice(index, index + batchSize).map((pokemon) => {
+      const collectionKey = getCollectionKey(pokemon);
+      const isShiny = isPokemonShinyFromData(pokemon, shiny);
+      const name = pokemon.displayName || pokemon.name;
+      return `
+        <div class="collection-entry">
+          <span class="collection-entry-name"><span class="collection-entry-number">#${escapeHtml(pokemon.number)}</span>${escapeHtml(name)}${isShiny ? '<span class="collection-shiny-symbol" aria-label="Shiny" title="Shiny">✦</span>' : ''}</span>
+          <div class="collection-entry-controls">
+            ${renderCollectionStatusButtons(collectionKey, getCollectionStatusFromData(pokemon, collection), `Collection status for ${name}`, 'collection-entry-status')}
+            <button type="button" class="collection-shiny-button${isShiny ? ' active' : ''}" data-collection-shiny="${escapeHtml(collectionKey)}" aria-pressed="${isShiny}" aria-label="Shiny ${escapeHtml(name)}">
+              Shiny
+            </button>
+          </div>
+        </div>`;
+    }).join('');
+    entries.insertAdjacentHTML('beforeend', batch);
+    index += batchSize;
+    if (index < species.length) {
+      collectionEntriesRenderFrame = requestAnimationFrame(appendBatch);
+    } else {
+      collectionEntriesRenderFrame = null;
+    }
+  };
+
+  appendBatch();
+}
+
 function renderCollectionProgress(renderEntries = elements.collectionDialog?.open) {
   const dialog = elements.collectionDialog;
   if (!dialog) return;
@@ -924,21 +1111,8 @@ function renderCollectionProgress(renderEntries = elements.collectionDialog?.ope
       || String(pokemon.displayName || '').toLowerCase().includes(query);
     return matchesQuery && (selectedStatus === 'all' || status === selectedStatus);
   });
-  if (elements.collectionEntries && renderEntries) {
-    elements.collectionEntries.innerHTML = species.length
-      ? visibleSpecies.length
-        ? visibleSpecies.map((pokemon) => `
-          <div class="collection-entry">
-              <span class="collection-entry-name"><span class="collection-entry-number">#${escapeHtml(pokemon.number)}</span>${escapeHtml(pokemon.displayName || pokemon.name)}${isPokemonShinyFromData(pokemon, shiny) ? '<span class="collection-shiny-symbol" aria-label="Shiny" title="Shiny">✦</span>' : ''}</span>
-            <div class="collection-entry-controls">
-              ${renderCollectionStatusButtons(getCollectionKey(pokemon), getCollectionStatusFromData(pokemon, collection), `Collection status for ${pokemon.displayName || pokemon.name}`, 'collection-entry-status')}
-              <button type="button" class="collection-shiny-button${isPokemonShinyFromData(pokemon, shiny) ? ' active' : ''}" data-collection-shiny="${escapeHtml(getCollectionKey(pokemon))}" aria-pressed="${isPokemonShinyFromData(pokemon, shiny)}" aria-label="Shiny ${escapeHtml(pokemon.displayName || pokemon.name)}">
-                Shiny
-              </button>
-            </div>
-          </div>`).join('')
-        : '<p class="collection-empty">No Pokémon match these search and status filters.</p>'
-      : '<p class="collection-empty">Pokémon data is still loading.</p>';
+  if (elements.collectionEntries && (renderEntries || collectionEntriesRenderFrame !== null)) {
+    renderCollectionEntries(visibleSpecies, species.length);
   }
   if (elements.collectionButton) {
     elements.collectionButton.textContent = currentUsername && species.length
@@ -957,12 +1131,13 @@ function openCollectionDialog(trigger) {
   }
   if (!elements.collectionDialog || elements.collectionDialog.open) return;
   collectionDialogReturnFocus = trigger;
-  renderCollectionProgress(true);
   elements.collectionDialog.showModal();
+  renderCollectionProgress(true);
   elements.collectionSearch?.focus();
 }
 
 function closeCollectionDialog() {
+  cancelCollectionEntriesRender();
   closeCollectionDropdowns();
   elements.collectionDialog?.close();
   const returnFocus = collectionDialogReturnFocus;
@@ -2523,6 +2698,190 @@ function saveActiveTeamMoves(teamMoves) {
   localStorage.setItem(GUEST_TEAM_MOVES_STORAGE_KEY, JSON.stringify(teamMoves));
 }
 
+function getActiveTeamStats() {
+  if (currentUsername) {
+    const teamStats = getCurrentProfile()?.teamStats;
+    return teamStats && typeof teamStats === 'object' && !Array.isArray(teamStats) ? teamStats : {};
+  }
+  try {
+    const teamStats = JSON.parse(localStorage.getItem(GUEST_TEAM_STATS_STORAGE_KEY) || '{}');
+    return teamStats && typeof teamStats === 'object' && !Array.isArray(teamStats) ? teamStats : {};
+  } catch (error) {
+    console.warn('Unable to read guest team stat values', error);
+    return {};
+  }
+}
+
+function saveActiveTeamStats(teamStats) {
+  if (currentUsername) {
+    const profiles = getProfiles();
+    const profile = profiles[currentUsername];
+    if (!profile) {
+      console.error('Unable to save team stat values: active profile was not found.');
+      return;
+    }
+    profile.teamStats = teamStats;
+    saveProfiles(profiles);
+    return;
+  }
+  localStorage.setItem(GUEST_TEAM_STATS_STORAGE_KEY, JSON.stringify(teamStats));
+}
+
+function getTeamStatSettings(pokemonKey) {
+  const saved = getActiveTeamStats()[pokemonKey] || {};
+  const savedIvs = saved.ivs && typeof saved.ivs === 'object' ? saved.ivs : {};
+  const savedEvs = saved.evs && typeof saved.evs === 'object' ? saved.evs : {};
+  const ivs = {};
+  const evs = {};
+  TEAM_STAT_KEYS.forEach((stat) => {
+    const iv = Number(savedIvs[stat]);
+    const ev = Number(savedEvs[stat]);
+    ivs[stat] = Number.isFinite(iv) ? Math.max(0, Math.min(31, Math.floor(iv))) : 31;
+    evs[stat] = Number.isFinite(ev) ? Math.max(0, Math.min(252, Math.floor(ev))) : 0;
+  });
+  const level = Number(saved.level);
+  return {
+    level: Number.isFinite(level) ? Math.max(1, Math.min(100, Math.floor(level))) : 50,
+    nature: Object.prototype.hasOwnProperty.call(NATURES, saved.nature) ? saved.nature : 'Hardy',
+    ivs,
+    evs
+  };
+}
+
+function setTeamStatSetting(pokemonKey, setting, stat, rawValue) {
+  const teamStats = getActiveTeamStats();
+  const current = getTeamStatSettings(pokemonKey);
+  const numericValue = Number(rawValue);
+  const value = Number.isFinite(numericValue) ? Math.floor(numericValue) : 0;
+  if (setting === 'level') {
+    current.level = Math.max(1, Math.min(100, value));
+  } else if (setting === 'nature' && Object.prototype.hasOwnProperty.call(NATURES, rawValue)) {
+    current.nature = rawValue;
+  } else if (TEAM_STAT_KEYS.includes(stat)) {
+    if (setting === 'iv') {
+      current.ivs[stat] = Math.max(0, Math.min(31, value));
+    } else if (setting === 'ev') {
+      const otherEvs = TEAM_STAT_KEYS
+        .filter((key) => key !== stat)
+        .reduce((total, key) => total + current.evs[key], 0);
+      current.evs[stat] = Math.max(0, Math.min(252, 510 - otherEvs, value));
+    }
+  } else {
+    return;
+  }
+  teamStats[pokemonKey] = current;
+  saveActiveTeamStats(teamStats);
+}
+
+function getTeamStatValues(pokemon, settings) {
+  return Object.fromEntries(TEAM_STAT_KEYS.map((stat) => {
+    const base = Number(pokemon.baseStats?.[stat]) || 0;
+    const core = Math.floor(((2 * base + settings.ivs[stat] + Math.floor(settings.evs[stat] / 4)) * settings.level) / 100);
+    const value = stat === 'HP' ? core + settings.level + 10 : core + 5;
+    const [raised, lowered] = NATURES[settings.nature] || NATURES.Hardy;
+    const multiplier = stat === raised && raised !== lowered ? 1.1 : stat === lowered && raised !== lowered ? 0.9 : 1;
+    return [stat, stat === 'HP' ? value : Math.floor(value * multiplier)];
+  }));
+}
+
+function updateTeamStatDisplay(pokemonKey) {
+  const slot = [...(elements.teamRoster?.querySelectorAll('.team-slot') || [])]
+    .find((element) => element.querySelector('[data-team-stat-pokemon-key]')?.dataset.teamStatPokemonKey === pokemonKey);
+  const pokemon = pokemonByKey.get(pokemonKey);
+  if (!slot || !pokemon) return;
+  const settings = getTeamStatSettings(pokemonKey);
+  const values = getTeamStatValues(pokemon, settings);
+  const summary = slot.querySelector('.team-stat-summary');
+  const natureSummary = slot.querySelector('.team-stat-nature-summary');
+  const levelLabel = slot.querySelector('.team-stat-level');
+  if (levelLabel) levelLabel.textContent = `Lv. ${settings.level}`;
+  if (natureSummary) natureSummary.textContent = settings.nature;
+  if (summary) summary.innerHTML = TEAM_STAT_KEYS.map((stat) => (
+    `<span><strong>${stat}</strong> ${values[stat]}</span>`
+  )).join('');
+  const evTotal = TEAM_STAT_KEYS.reduce((total, stat) => total + settings.evs[stat], 0);
+  const evSummary = slot.querySelector('.team-stat-panel-heading > span');
+  if (evSummary) evSummary.textContent = `EVs: ${evTotal} / 510`;
+  TEAM_STAT_KEYS.forEach((stat) => {
+    const ivInput = slot.querySelector(`[data-team-stat-iv="${stat}"]`);
+    const evInput = slot.querySelector(`[data-team-stat-ev="${stat}"]`);
+    const value = slot.querySelector(`[data-team-stat-value="${stat}"]`);
+    if (ivInput) ivInput.value = String(settings.ivs[stat]);
+    if (evInput) evInput.value = String(settings.evs[stat]);
+    if (value) value.textContent = String(values[stat]);
+  });
+  const levelInput = slot.querySelector('[data-team-stat-level]');
+  if (levelInput) levelInput.value = String(settings.level);
+  const natureTrigger = slot.querySelector('[data-team-nature-toggle]');
+  if (natureTrigger) natureTrigger.querySelector('span').textContent = getNatureLabel(settings.nature);
+  slot.querySelectorAll('.team-nature-option').forEach((option) => {
+    const isSelected = option.dataset.teamNatureOption === settings.nature;
+    option.setAttribute('aria-selected', String(isSelected));
+    option.classList.toggle('selected', isSelected);
+    const check = option.querySelector('.team-form-check');
+    if (isSelected && !check) option.insertAdjacentHTML('beforeend', '<span class="team-form-check" aria-hidden="true">✓</span>');
+    if (!isSelected) check?.remove();
+  });
+}
+
+function closeTeamStatPopup(segment) {
+  const panel = segment?.querySelector('.team-stat-panel');
+  if (!panel) return;
+  panel.hidden = true;
+  segment.classList.remove('is-stat-open');
+  segment.querySelector('[data-team-stat-toggle]')?.setAttribute('aria-expanded', 'false');
+}
+
+function closeTeamStatPopups() {
+  elements.teamRoster?.querySelectorAll('.team-stat-segment').forEach(closeTeamStatPopup);
+}
+
+function renderTeamStatValues(pokemon) {
+  const pokemonKey = getPokemonKey(pokemon);
+  const settings = getTeamStatSettings(pokemonKey);
+  const values = getTeamStatValues(pokemon, settings);
+  const natureOptions = Object.keys(NATURES).sort((left, right) => left.localeCompare(right))
+    .map((nature) => {
+      const isSelected = settings.nature === nature;
+      return `<button type="button" role="option" aria-selected="${isSelected}" class="team-nature-option${isSelected ? ' selected' : ''}" data-team-pokemon-key="${escapeHtml(pokemonKey)}" data-team-nature-option="${nature}"><span>${escapeHtml(getNatureLabel(nature))}</span>${isSelected ? '<span class="team-form-check" aria-hidden="true">✓</span>' : ''}</button>`;
+    })
+    .join('');
+  const summary = TEAM_STAT_KEYS.map((stat) => (
+    `<span><strong>${stat}</strong> ${values[stat]}</span>`
+  )).join('');
+  const rows = TEAM_STAT_KEYS.map((stat) => `
+    <label class="team-stat-row">
+      <strong>${stat}</strong>
+      <span class="team-stat-calculated" data-team-stat-value="${stat}">${values[stat]}</span>
+      <span>IV <input type="number" min="0" max="31" step="1" value="${settings.ivs[stat]}" data-team-pokemon-key="${escapeHtml(pokemonKey)}" data-team-stat-iv="${stat}" aria-label="${stat} IV for ${escapeHtml(pokemon.name)}" /></span>
+      <span>EV <input type="number" min="0" max="252" step="1" value="${settings.evs[stat]}" data-team-pokemon-key="${escapeHtml(pokemonKey)}" data-team-stat-ev="${stat}" aria-label="${stat} EV for ${escapeHtml(pokemon.name)}" /></span>
+    </label>`).join('');
+  return `
+    <section class="team-stat-segment" data-team-stat-pokemon-key="${escapeHtml(pokemonKey)}">
+      <button type="button" class="team-stat-toggle" data-team-stat-toggle aria-expanded="false" aria-label="Edit level, IVs, and EVs for ${escapeHtml(pokemon.displayName || pokemon.name)}">
+        <span class="team-stat-toggle-heading">Stat Values</span>
+        <span class="team-stat-summary-row">
+          <span class="team-stat-summary">${summary}</span>
+          <span class="team-stat-nature-summary">${escapeHtml(settings.nature)}</span>
+        </span>
+      </button>
+      <div class="team-stat-panel" hidden>
+        <div class="team-stat-panel-heading"><strong>Stat Values</strong><span>EVs: ${TEAM_STAT_KEYS.reduce((total, stat) => total + settings.evs[stat], 0)} / 510</span></div>
+        <label class="team-stat-level-input">Level <input type="number" min="1" max="100" step="1" value="${settings.level}" data-team-pokemon-key="${escapeHtml(pokemonKey)}" data-team-stat-level aria-label="Level for ${escapeHtml(pokemon.name)}" /></label>
+        <div class="team-stat-nature-input">
+          <span>Nature</span>
+          <div class="team-nature-picker">
+            <button type="button" class="team-form-trigger team-nature-trigger" data-team-nature-toggle aria-haspopup="listbox" aria-expanded="false" aria-label="Nature for ${escapeHtml(pokemon.name)}">
+              <span>${escapeHtml(getNatureLabel(settings.nature))}</span><span class="team-form-chevron" aria-hidden="true"></span>
+            </button>
+            <div class="team-form-menu team-nature-menu" role="listbox" aria-label="Choose a nature for ${escapeHtml(pokemon.name)}" hidden>${natureOptions}</div>
+          </div>
+        </div>
+        <div class="team-stat-rows">${rows}</div>
+      </div>
+    </section>`;
+}
+
 function setTeamMove(pokemonKey, slot, moveId) {
   if (!Number.isInteger(slot) || slot < 0 || slot >= 4) return;
   const pokemon = pokemonByKey.get(pokemonKey);
@@ -2544,7 +2903,7 @@ function setTeamMove(pokemonKey, slot, moveId) {
     const chosenMove = moveId ? movesLookup[moveId] : null;
     if (trigger) {
       trigger.querySelector('.team-move-trigger-copy').innerHTML = chosenMove
-        ? `${escapeHtml(chosenMove.name)}${renderMoveTypePill(chosenMove.type)}<span class="team-move-category">${escapeHtml(chosenMove.category)}</span>`
+        ? `<span class="team-move-trigger-name">${escapeHtml(chosenMove.name)}</span>${renderMoveTypePill(chosenMove.type)}${renderMoveCategoryBadge(chosenMove.category)}`
         : '<span class="team-move-placeholder">Choose a move</span>';
     }
     picker?.querySelectorAll('.team-move-option').forEach((option) => {
@@ -2559,13 +2918,35 @@ function setTeamMove(pokemonKey, slot, moveId) {
 
 function closeTeamDropdowns() {
   [elements.teamRoster, elements.pokemonCompareSlots].forEach((container) => {
-    container?.querySelectorAll('.team-form-menu, .team-move-menu').forEach((menu) => {
+    container?.querySelectorAll('.team-form-menu, .team-move-menu, .team-nature-menu').forEach((menu) => {
       menu.hidden = true;
     });
-    container?.querySelectorAll('[data-team-form-toggle], [data-team-move-toggle], [data-compare-form-toggle]').forEach((button) => {
+    container?.querySelectorAll('[data-team-form-toggle], [data-team-move-toggle], [data-team-nature-toggle], [data-compare-form-toggle]').forEach((button) => {
       button.setAttribute('aria-expanded', 'false');
     });
   });
+}
+
+function filterTeamMoveOptions(menu) {
+  if (!menu) return;
+  const query = String(menu.querySelector('.team-move-search')?.value || '').trim().toLowerCase();
+  menu.querySelectorAll('.team-move-group').forEach((group) => {
+    let visibleOptions = 0;
+    group.querySelectorAll('.team-move-option').forEach((option) => {
+      const matches = !query || option.textContent.toLowerCase().includes(query);
+      option.hidden = !matches;
+      if (matches) visibleOptions += 1;
+    });
+    group.hidden = visibleOptions === 0;
+  });
+  const emptyOption = menu.querySelector('.team-move-empty-option');
+  if (emptyOption) {
+    const matches = !query || emptyOption.textContent.toLowerCase().includes(query);
+    emptyOption.hidden = !matches;
+  }
+  const hasMatches = Boolean(menu.querySelector('.team-move-option:not([hidden])'));
+  const noResults = menu.querySelector('.team-move-no-results');
+  if (noResults) noResults.hidden = hasMatches;
 }
 
 function getPokemonTeamMoves(pokemon) {
@@ -2624,6 +3005,9 @@ function removePokemonFromTeam(index) {
   const teamMoves = getActiveTeamMoves();
   delete teamMoves[removedKey];
   saveActiveTeamMoves(teamMoves);
+  const teamStats = getActiveTeamStats();
+  delete teamStats[removedKey];
+  saveActiveTeamStats(teamStats);
   saveActiveTeam(team);
   renderTeamBuilder({ renderOptions: false });
 }
@@ -3131,6 +3515,7 @@ function renderTeamAnalysis(team) {
       .filter((id) => availableIds.has(id))
       .map((id) => movesLookup[id])
       .filter(Boolean)
+      .filter((move) => String(move.category || '').trim().toLowerCase() !== 'status')
       .map((move) => ({ ...move, pokemonName: pokemon.displayName || pokemon.name }));
   });
   const offensiveCoverage = TYPE_ORDER.map((defendingType) => ({
@@ -3208,18 +3593,15 @@ function renderTeamRoster(team) {
     const formSwitcher = forms.length > 1
       ? `<div class="team-form-control"><span class="team-form-label">Form</span><div class="team-form-picker"><button type="button" class="team-form-trigger" data-team-form-toggle aria-haspopup="listbox" aria-expanded="false"><span>${escapeHtml(pokemon.name)}</span><span class="team-form-chevron" aria-hidden="true"></span></button><div class="team-form-menu" role="listbox" aria-label="Choose a form for ${escapeHtml(pokemon.displayName || pokemon.name)}" hidden>${forms.map((form) => `<button type="button" role="option" aria-selected="${getPokemonKey(form) === key}" class="team-form-option${getPokemonKey(form) === key ? ' selected' : ''}" data-team-form-index="${index}" data-team-form-key="${escapeHtml(getPokemonKey(form))}"><span>${escapeHtml(form.name)}</span>${getPokemonKey(form) === key ? '<span class="team-form-check" aria-hidden="true">✓</span>' : ''}</button>`).join('')}</div></div></div>`
       : '';
-    return `<article class="team-slot"><div class="team-slot-heading"><span class="team-slot-number">TEAM SLOT ${index + 1} <span>#${escapeHtml(pokemon.number)}</span></span><div><button type="button" class="team-slot-link" data-team-view="${escapeHtml(key)}">View details</button><button type="button" class="team-slot-remove" data-team-remove="${index}" aria-label="Remove ${escapeHtml(pokemon.displayName || pokemon.name)}">Remove</button></div></div><h3>${escapeHtml(pokemon.displayName || pokemon.name)}</h3><div class="team-option-types">${pokemon.types.filter(Boolean).map(renderMoveTypePill).join('')}</div>${formSwitcher}${renderTeamMovePlanner(pokemon)}</article>`;
+    return `<article class="team-slot"><div class="team-slot-heading"><span class="team-slot-number">TEAM SLOT ${index + 1}</span><div><button type="button" class="team-slot-link" data-team-view="${escapeHtml(key)}">View details</button><button type="button" class="team-slot-remove" data-team-remove="${index}" aria-label="Remove ${escapeHtml(pokemon.displayName || pokemon.name)}">Remove</button></div></div><div class="team-slot-name-row"><h3>${escapeHtml(pokemon.displayName || pokemon.name)}</h3><span class="team-slot-dex-number">#${escapeHtml(pokemon.number)}</span><span class="team-stat-level">Lv. ${getTeamStatSettings(key).level}</span></div><div class="team-slot-meta-row"><div class="team-option-types">${pokemon.types.filter(Boolean).map(renderMoveTypePill).join('')}</div>${formSwitcher}</div>${renderTeamStatValues(pokemon)}${renderTeamMovePlanner(pokemon)}</article>`;
   }).join('');
 }
 
 function renderTeamMovePlanner(pokemon) {
-  if (moveDataLoadFailed) {
-    return '<div class="team-move-planner"><h4>Move plan</h4><p class="team-analysis-note">Move data could not be loaded. Try opening the MoveDex again.</p></div>';
-  }
-  if (!moveDataLoaded) {
-    return '<div class="team-move-planner"><h4>Move plan</h4><p class="team-analysis-note">Loading move data…</p></div>';
-  }
+  if (moveDataLoadFailed) return renderUnavailableTeamMovePlanner(pokemon, 'Move data could not be loaded');
+  if (!moveDataLoaded) return renderUnavailableTeamMovePlanner(pokemon, 'Loading move data…');
   const moves = getPokemonTeamMoves(pokemon);
+  if (!moves.length) return renderUnavailableTeamMovePlanner(pokemon, 'No moves available');
   const teamMoves = getActiveTeamMoves();
   const selectedMoveIds = Array.isArray(teamMoves[getPokemonKey(pokemon)])
     ? teamMoves[getPokemonKey(pokemon)].slice(0, 4)
@@ -3231,16 +3613,21 @@ function renderTeamMovePlanner(pokemon) {
   const slots = Array.from({ length: 4 }, (_, slot) => {
     const selectedId = selectedMoveIds[slot] || '';
     const selectedMove = movesLookup[selectedId];
-    const options = `<button type="button" role="option" aria-selected="${selectedId ? 'false' : 'true'}" class="team-move-option${selectedId ? '' : ' selected'}" data-team-move-slot="${slot}" data-team-pokemon-key="${escapeHtml(getPokemonKey(pokemon))}" data-team-move-id=""><span class="team-move-option-name">No move selected</span>${selectedId ? '' : '<span class="team-form-check" aria-hidden="true">✓</span>'}</button>${categories.map((category) => {
+    const options = `<button type="button" role="option" aria-selected="${selectedId ? 'false' : 'true'}" class="team-move-option team-move-empty-option${selectedId ? '' : ' selected'}" data-team-move-slot="${slot}" data-team-pokemon-key="${escapeHtml(getPokemonKey(pokemon))}" data-team-move-id=""><span class="team-move-option-name">No move selected</span>${selectedId ? '' : '<span class="team-form-check" aria-hidden="true">✓</span>'}</button>${categories.map((category) => {
       const categoryMoves = moves.filter(({ method }) => method === category);
-      return `<div class="team-move-group" role="group" aria-label="${escapeHtml(category)}"><span class="team-move-group-label">${escapeHtml(category)}</span>${categoryMoves.map(({ move }) => `<button type="button" role="option" aria-selected="${move.id === selectedId}" class="team-move-option${move.id === selectedId ? ' selected' : ''}" data-team-move-slot="${slot}" data-team-pokemon-key="${escapeHtml(getPokemonKey(pokemon))}" data-team-move-id="${escapeHtml(move.id)}"><span class="team-move-option-name">${escapeHtml(move.name)}</span>${renderMoveTypePill(move.type)}<span class="team-move-category">${escapeHtml(move.category)}</span>${move.id === selectedId ? '<span class="team-form-check" aria-hidden="true">✓</span>' : ''}</button>`).join('')}</div>`;
+      return `<div class="team-move-group" role="group" aria-label="${escapeHtml(category)}"><span class="team-move-group-label">${escapeHtml(category)}</span>${categoryMoves.map(({ move }) => `<button type="button" role="option" aria-selected="${move.id === selectedId}" class="team-move-option${move.id === selectedId ? ' selected' : ''}" data-team-move-slot="${slot}" data-team-pokemon-key="${escapeHtml(getPokemonKey(pokemon))}" data-team-move-id="${escapeHtml(move.id)}"><span class="team-move-option-label"><span class="team-move-option-name">${escapeHtml(move.name)}</span>${move.id === selectedId ? '<span class="team-form-check" aria-hidden="true">✓</span>' : ''}</span>${renderMoveTypePill(move.type)}${renderMoveCategoryBadge(move.category)}</button>`).join('')}</div>`;
     }).join('')}`;
     const triggerContent = selectedMove
-      ? `${escapeHtml(selectedMove.name)}${renderMoveTypePill(selectedMove.type)}<span class="team-move-category">${escapeHtml(selectedMove.category)}</span>`
+      ? `<span class="team-move-trigger-name">${escapeHtml(selectedMove.name)}</span>${renderMoveTypePill(selectedMove.type)}${renderMoveCategoryBadge(selectedMove.category)}`
       : '<span class="team-move-placeholder">Choose a move</span>';
-    return `<div class="team-move-slot"><span class="team-move-slot-label">Move ${slot + 1}</span><div class="team-move-picker" data-team-move-slot="${slot}" data-team-pokemon-key="${escapeHtml(getPokemonKey(pokemon))}"><button type="button" class="team-move-trigger" data-team-move-toggle aria-haspopup="listbox" aria-expanded="false" aria-label="Move ${slot + 1} for ${escapeHtml(pokemon.displayName || pokemon.name)}"><span class="team-move-trigger-copy">${triggerContent}</span><span class="team-form-chevron" aria-hidden="true"></span></button><div class="team-move-menu" role="listbox" aria-label="Choose move ${slot + 1} for ${escapeHtml(pokemon.displayName || pokemon.name)}" hidden>${options}</div></div></div>`;
+    return `<div class="team-move-slot"><span class="team-move-slot-label">Move ${slot + 1}</span><div class="team-move-picker" data-team-move-slot="${slot}" data-team-pokemon-key="${escapeHtml(getPokemonKey(pokemon))}"><button type="button" class="team-move-trigger" data-team-move-toggle aria-haspopup="listbox" aria-expanded="false" aria-label="Move ${slot + 1} for ${escapeHtml(pokemon.displayName || pokemon.name)}"><span class="team-move-trigger-copy">${triggerContent}</span><span class="team-form-chevron" aria-hidden="true"></span></button><div class="team-move-menu" aria-label="Choose move ${slot + 1} for ${escapeHtml(pokemon.displayName || pokemon.name)}" hidden><input type="search" class="team-move-search" placeholder="Search moves..." autocomplete="off" aria-label="Search moves for move slot ${slot + 1}" /><div class="team-move-options" role="listbox" aria-label="Move options">${options}<p class="team-move-no-results" hidden>No moves match your search.</p></div></div></div></div>`;
   }).join('');
-  return `<section class="team-move-planner" data-team-move-planner="${escapeHtml(getPokemonKey(pokemon))}"><div class="team-move-planner-heading"><h4>Move plan</h4><span>${count} / 4 selected</span></div>${moves.length ? `<div class="team-move-slots">${slots}</div>` : '<p class="team-analysis-note">No move data is available for this Pokémon form.</p>'}</section>`;
+  return `<section class="team-move-planner" data-team-move-planner="${escapeHtml(getPokemonKey(pokemon))}"><div class="team-move-planner-heading"><h4>Move plan</h4><span>${count} / 4 selected</span></div><div class="team-move-slots">${slots}</div></section>`;
+}
+
+function renderUnavailableTeamMovePlanner(pokemon, message) {
+  const pokemonKey = getPokemonKey(pokemon);
+  return `<section class="team-move-planner" data-team-move-planner="${escapeHtml(pokemonKey)}"><div class="team-move-planner-heading"><h4>Move plan</h4><span>0 / 4 selected</span></div><div class="team-move-slots team-move-slots-unavailable"><p>${escapeHtml(message)}</p></div></section>`;
 }
 
 function selectMove(move) {
