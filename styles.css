@@ -800,7 +800,7 @@ button, input {
 
 .pokemon-grid-entries {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(4.5rem, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   align-content: start;
   gap: 0.35rem;
   min-height: 0;
@@ -810,12 +810,13 @@ button, input {
 .pokemon-grid-card {
   position: relative;
   display: grid;
-  grid-template-rows: 1fr auto auto;
+  grid-template-rows: 2.75rem 2.1rem 1rem;
   justify-items: center;
   align-items: center;
   gap: 0.2rem;
   min-width: 0;
-  min-height: 7rem;
+  height: 7rem;
+  box-sizing: border-box;
   padding: 0.3rem;
   border: 1px solid rgba(148, 163, 184, 0.14);
   border-radius: 14px;
@@ -841,8 +842,13 @@ button, input {
 
 .pokemon-grid-card strong {
   max-width: 100%;
-  overflow-wrap: anywhere;
+  display: -webkit-box;
+  overflow: hidden;
   font-size: 0.72rem;
+  line-height: 1.05rem;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
 }
 
 .pokemon-grid-dex {
@@ -858,8 +864,9 @@ button, input {
   display: flex;
   width: 100%;
   min-width: 0;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: center;
+  overflow: hidden;
   gap: 0.15rem;
 }
 
@@ -887,6 +894,7 @@ button, input {
 .pokemon-list.grid-view {
   display: block;
   overflow-y: auto;
+  scrollbar-gutter: stable;
   padding: 0.25rem;
 }
 
@@ -4301,36 +4309,96 @@ button, input {
 .evolution-tree-node {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: 0;
   flex: 0 0 auto;
 }
 
 .evolution-children {
-  display: grid;
-  gap: 0.5rem;
-  padding: 0.25rem 0 0.25rem 0.65rem;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  padding: 0.25rem 0 0.25rem 0.55rem;
+}
+
+.evolution-children.branching {
+  padding-left: 0.4rem;
+}
+
+.evolution-children.compact {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.3rem;
 }
 
 .evolution-branch {
   display: flex;
   align-items: center;
-  gap: 0.55rem;
+  gap: 0.25rem;
+  min-width: 0;
   min-height: 2.5rem;
 }
 
+.evolution-children.compact > .evolution-branch {
+  min-height: 2.25rem;
+  gap: 0.15rem;
+}
+
+.evolution-children.compact .evolution-pokemon {
+  width: 10rem;
+  max-width: 10rem;
+  flex-basis: 10rem;
+  min-height: 2.25rem;
+  padding: 0.2rem 0.35rem;
+  font-size: 0.74rem;
+}
+
+.evolution-children.compact .evolution-sprite {
+  width: 1.65rem;
+  height: 1.65rem;
+  flex-basis: 1.65rem;
+}
+
 .evolution-pokemon {
-  padding: 0.55rem 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: 10rem;
+  max-width: 10rem;
+  flex: 0 0 10rem;
+  min-width: 0;
+  min-height: 2.5rem;
+  box-sizing: border-box;
+  padding: 0.3rem 0.4rem;
   border: 1px solid rgba(56, 189, 248, 0.18);
-  border-radius: 11px;
+  border-radius: 13px;
   background: linear-gradient(135deg, rgba(15, 31, 46, 0.98), rgba(8, 15, 24, 0.96));
   color: var(--text);
   cursor: pointer;
   font: inherit;
-  font-size: 0.88rem;
-  font-weight: 750;
-  overflow-wrap: anywhere;
-  text-align: left;
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-align: start;
   transition: border-color 0.16s ease, background 0.16s ease, transform 0.16s ease;
+}
+
+.evolution-pokemon span {
+  display: -webkit-box;
+  min-width: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+  line-height: 1.1;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.evolution-sprite {
+  display: block;
+  width: 1.9rem;
+  height: 1.9rem;
+  flex: 0 0 1.9rem;
+  object-fit: contain;
 }
 
 .evolution-pokemon:hover,
@@ -4349,10 +4417,38 @@ button, input {
 }
 
 .evolution-arrow {
-  flex: 0 0 auto;
+  position: relative;
+  z-index: 1;
+  display: inline-grid;
+  width: 1.5rem;
+  height: 1.5rem;
+  justify-content: center;
+  align-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 0.35rem;
+  background: rgba(17, 26, 38, 0.96);
+  flex: 0 0 1.5rem;
   color: var(--accent-strong);
-  font-size: 1.25rem;
-  font-weight: 800;
+  cursor: pointer;
+}
+
+.evolution-arrow:hover,
+.evolution-arrow:focus-visible {
+  outline: 1px solid currentColor;
+  outline-offset: 1px;
+  background: rgba(30, 48, 64, 0.98);
+}
+
+.evolution-arrow svg {
+  display: block;
+  width: 1.1rem;
+  height: 1.1rem;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.75;
 }
 
 .evolution-arrow.reversible {

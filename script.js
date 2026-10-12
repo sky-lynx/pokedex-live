@@ -4678,13 +4678,16 @@ function getEvolutionEdges(pokemon) {
     const parent = queue.shift();
     const children = allPokemon.filter((candidate) => resolveParent(candidate) === parent);
     children.forEach((child) => {
+      const reversible = /<\s*-\s*>|↔/.test(String(child.evolutionType || ''));
+      if (String(parent.number) === String(child.number) && !reversible) return;
       const edgeKey = `${getPokemonKey(parent)}>${getPokemonKey(child)}`;
       if (seenEdges.has(edgeKey)) return;
       seenEdges.add(edgeKey);
       edges.push({
         parent,
         child,
-        reversible: /<\s*-\s*>|↔/.test(String(child.evolutionType || ''))
+        reversible,
+        method: String(child.evolutionMethod || '').trim()
       });
       if (!visited.has(child)) {
         visited.add(child);
@@ -4702,14 +4705,42 @@ function renderEvolutionNode(pokemon, childrenByParent, rendered = new Set()) {
   const children = (childrenByParent.get(pokemon) || []).filter(({ child }) => (
     !rendered.has(getPokemonKey(child))
   ));
+  const sprite = `sprites/${getPokemonSpriteBase(pokemon)}.png`;
   return `
     <div class="evolution-tree-node">
-      <button type="button" class="evolution-pokemon${pokemon === selectedPokemon ? ' current' : ''}" data-evolution-pokemon-key="${escapeHtml(key)}">${escapeHtml(pokemon.name)}</button>
-      ${children.length ? `<div class="evolution-children">${children.map(({ child, reversible }) => `
+      <button type="button" class="evolution-pokemon${pokemon === selectedPokemon ? ' current' : ''}" data-evolution-pokemon-key="${escapeHtml(key)}">
+        <img class="evolution-sprite" src="${escapeHtml(sprite)}" alt="" loading="lazy" decoding="async" />
+        <span>${escapeHtml(pokemon.name)}</span>
+      </button>
+      ${children.length ? `<div class="evolution-children${children.length > 1 ? ' branching' : ''}${children.length >= 5 ? ' compact' : ''}">${children.map(({ child, reversible, method }, index) => {
+        const branchMidpoint = (children.length - 1) / 2;
+        const branchDirection = children.length > 1 && index < branchMidpoint
+          ? 'up'
+          : children.length > 1 && index > branchMidpoint
+            ? 'down'
+            : null;
+        const branchArrow = reversible
+          ? branchDirection === 'up' ? '⤢' : branchDirection === 'down' ? '⤡' : '↔'
+          : branchDirection === 'up' ? '↗' : branchDirection === 'down' ? '↘' : '→';
+        const arrowPaths = {
+          '→': '<path d="M4 12h15m-5-5 5 5-5 5"/>',
+          '↔': '<path d="M4 12h16M8 8l-4 4 4 4m8-8 4 4-4 4"/>',
+          '↗': '<path d="M5 19 19 5m-7 0h7v7"/>',
+          '↘': '<path d="m5 5 14 14m0-7v7h-7"/>',
+          '⤢': '<path d="M5 19 19 5m-7 0h7v7M5 13v6h6"/>',
+          '⤡': '<path d="M5 5 19 19m-6 0h6v-6M5 11V5h6"/>'
+        };
+        const arrowIcon = `<svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">${arrowPaths[branchArrow]}</svg>`;
+        const methodDescription = method || (reversible ? 'Coming soon' : 'Evolution method coming soon');
+        const arrowDescription = method
+          ? `${pokemon.name} evolves into ${child.name}: ${method}`
+          : methodDescription;
+        return `
         <div class="evolution-branch">
-          <span class="evolution-arrow${reversible ? ' reversible' : ''}" aria-label="${reversible ? 'Reversible form' : 'Evolves into'}">${reversible ? '↔' : '→'}</span>
+          <button type="button" class="evolution-arrow${reversible ? ' reversible' : ''}" aria-label="${escapeHtml(arrowDescription)}" data-evolution-from="${escapeHtml(pokemon.name)}" data-evolution-to="${escapeHtml(child.name)}" data-evolution-method="${escapeHtml(methodDescription)}">${arrowIcon}</button>
           ${renderEvolutionNode(child, childrenByParent, rendered)}
-        </div>`).join('')}</div>` : ''}
+        </div>`;
+      }).join('')}</div>` : ''}
     </div>`;
 }
 
@@ -4726,7 +4757,19 @@ function renderEvolutionSection(pokemon) {
     root = parent;
   }
   const childrenByParent = new Map();
+  const alcremieToppings = ['Strawberry', 'Berry', 'Love', 'Star', 'Clover', 'Flower', 'Ribbon'];
+  const getAlcremieTopping = (entry) => (
+    alcremieToppings.find((topping) => entry.name.endsWith(topping)) || null
+  );
+  const selectedAlcremieTopping = Number(pokemon.number) === 869
+    ? getAlcremieTopping(pokemon) || 'Strawberry'
+    : 'Strawberry';
   edges.forEach((edge) => {
+    if (Number(edge.child.number) === 869) {
+      const childTopping = getAlcremieTopping(edge.child);
+      if (childTopping && childTopping !== selectedAlcremieTopping) return;
+      if (!childTopping && edge.child !== pokemon) return;
+    }
     if (!childrenByParent.has(edge.parent)) childrenByParent.set(edge.parent, []);
     childrenByParent.get(edge.parent).push(edge);
   });
@@ -4960,6 +5003,18 @@ function renderDetails(pokemon) {
       const relatedPokemon = pokemonByKey.get(button.dataset.evolutionPokemonKey);
       if (relatedPokemon) selectPokemon(relatedPokemon);
     });
+  });
+
+  elements.details.querySelectorAll('.evolution-arrow').forEach((button) => {
+    const showPopup = () => showEvolutionMethodPopup(button);
+    const scheduleHide = () => {
+      if (movePopupHideTimer) clearTimeout(movePopupHideTimer);
+      movePopupHideTimer = setTimeout(hideMovePopup, 180);
+    };
+    button.addEventListener('mouseenter', showPopup);
+    button.addEventListener('focus', showPopup);
+    button.addEventListener('mouseleave', scheduleHide);
+    button.addEventListener('blur', scheduleHide);
   });
 
   if (groupForms.length > 1) {
@@ -5922,6 +5977,51 @@ function resetPopupTheme(popup) {
   popup.style.boxShadow = '';
 }
 
+function showEvolutionMethodPopup(button) {
+  createMovePopup();
+  const popup = document.getElementById('move-popup');
+  if (!popup) return;
+  resetPopupTheme(popup);
+
+  const from = button.dataset.evolutionFrom || 'Pokémon';
+  const to = button.dataset.evolutionTo || 'Pokémon';
+  const method = button.dataset.evolutionMethod || 'Evolution method coming soon';
+  popup.innerHTML = `
+    <div style="font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:#93c5fd;margin-bottom:7px;">Evolution Method</div>
+    <div style="font-weight:700;margin-bottom:5px;">${escapeHtml(from)} → ${escapeHtml(to)}</div>
+    <div style="color:#dbeafe;">${escapeHtml(method)}</div>
+  `;
+  popup.setAttribute('aria-hidden', 'false');
+  popup.style.boxSizing = 'border-box';
+  popup.style.width = 'fit-content';
+  popup.style.minWidth = '0';
+  popup.style.maxWidth = `${Math.max(0, Math.min(320, window.innerWidth - 24))}px`;
+  popup.style.maxHeight = `${Math.max(0, window.innerHeight - 24)}px`;
+  popup.style.overflowY = 'auto';
+  popup.style.overflowWrap = 'anywhere';
+  popup.classList.add('visible');
+
+  const rect = button.getBoundingClientRect();
+  const offset = 8;
+  const width = popup.offsetWidth;
+  const height = popup.offsetHeight;
+  const left = Math.min(
+    Math.max(8, rect.left + rect.width / 2 - width / 2),
+    Math.max(8, window.innerWidth - width - 8)
+  );
+  const preferredTop = rect.top - height - offset;
+  const top = preferredTop >= 8
+    ? preferredTop
+    : Math.min(rect.bottom + offset, Math.max(8, window.innerHeight - height - 8));
+  popup.style.left = `${Math.round(left)}px`;
+  popup.style.top = `${Math.round(top)}px`;
+
+  if (movePopupHideTimer) {
+    clearTimeout(movePopupHideTimer);
+    movePopupHideTimer = null;
+  }
+}
+
 function showGamePopup(gameName, gameColor, clientX, clientY, targetElement) {
   createMovePopup();
   const popup = document.getElementById('move-popup');
@@ -6021,7 +6121,7 @@ function attachPopupClickHandler(container = elements.details) {
   if (container.dataset.popupClickBound === '1') return;
 
   container.addEventListener('click', (event) => {
-    const trigger = event.target.closest('.type-pill-button, .game-pill, .base-stat-line, .ranking-meta-item, .catch-rate-meta-item, .level-rate-meta-item, .egg-cycles-meta-item, .shape-meta-item, .color-meta-item, .egg-group-meta-item, .ability-box, .moveset-table tbody tr');
+    const trigger = event.target.closest('.type-pill-button, .game-pill, .base-stat-line, .ranking-meta-item, .catch-rate-meta-item, .level-rate-meta-item, .egg-cycles-meta-item, .shape-meta-item, .color-meta-item, .egg-group-meta-item, .ability-box, .evolution-arrow, .moveset-table tbody tr');
     if (!trigger || !container.contains(trigger)) return;
 
     container.querySelectorAll('.ability-box.pinned').forEach((ability) => {
