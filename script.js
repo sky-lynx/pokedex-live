@@ -43,7 +43,7 @@ const TYPE_COLORS = {
 
 const TYPE_ORDER = Object.keys(TYPE_COLORS);
 const GRID_TYPE_ABBREVIATIONS = {
-  Normal: 'NRM',
+  Normal: 'NOR',
   Fire: 'FIR',
   Water: 'WAT',
   Electric: 'ELE',
@@ -139,7 +139,11 @@ const elements = {
   teamPokemonList: document.getElementById('teamPokemonList'),
   teamPokemonCount: document.getElementById('teamPokemonCount'),
   teamCount: document.getElementById('teamCount'),
+  teamSelector: document.getElementById('teamSelector'),
+  teamNameInput: document.getElementById('teamNameInput'),
+  teamPokemonTabs: document.getElementById('teamPokemonTabs'),
   teamRoster: document.getElementById('teamRoster'),
+  teamOverview: document.getElementById('teamOverview'),
   teamAnalysis: document.getElementById('teamAnalysis'),
   pokemonCompareView: document.getElementById('pokemonCompareView'),
   comparePokemonSearch: document.getElementById('comparePokemonSearch'),
@@ -208,6 +212,8 @@ let selectedAbility = null;
 let selectedMoveDetailTab = 'basic';
 let selectedAbilityDetailTab = 'basic';
 let selectedTeamAnalysisTab = 'defensive';
+let selectedTeamStatView = 'radar';
+let selectedTeamPokemonKey = '';
 let selectedAbilityGen = 3;
 let abilityDescriptionGamesets = [];
 let selectedMoveTypes = new Set();
@@ -218,11 +224,14 @@ let moveNoteFilter = 'any';
 let abilityFavoriteFilter = 'any';
 let abilityNoteFilter = 'any';
 let abilitySlotFilter = 'any';
-let teamPokemonRenderToken = 0;
 const TEAM_SIZE = 6;
+const TEAM_SLOT_COUNT = 3;
 const GUEST_TEAM_STORAGE_KEY = 'pokedexGuestTeam';
 const GUEST_TEAM_MOVES_STORAGE_KEY = 'pokedexGuestTeamMoves';
 const GUEST_TEAM_STATS_STORAGE_KEY = 'pokedexGuestTeamStats';
+const GUEST_TEAMS_STORAGE_KEY = 'pokedexTeams';
+const GUEST_ACTIVE_TEAM_INDEX_KEY = 'pokedexActiveTeamIndex';
+const GUEST_TEAM_TERA_TYPES_KEY = 'pokedexGuestTeamTeraTypes';
 const TEAM_STAT_KEYS = ['HP', 'ATK', 'DEF', 'SpA', 'SpD', 'SPE'];
 let selectedMoveGen = 9;
 let selectedMoveLearnerCategory = 'levelUp';
@@ -414,19 +423,51 @@ async function initialize() {
     if (!button) return;
     addPokemonToTeam(button.dataset.teamAdd);
   });
+  elements.teamSelector?.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-team-index]');
+    if (button) setActiveTeamIndex(Number(button.dataset.teamIndex));
+  });
+  elements.teamPokemonTabs?.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-team-pokemon-tab]');
+    if (!button) return;
+    selectedTeamPokemonKey = button.dataset.teamPokemonTab;
+    renderTeamBuilder({ renderOptions: false });
+    [...elements.teamPokemonTabs.querySelectorAll('[data-team-pokemon-tab]')]
+      .find((tab) => tab.dataset.teamPokemonTab === selectedTeamPokemonKey)
+      ?.focus();
+  });
+  elements.teamPokemonTabs?.addEventListener('keydown', (event) => {
+    if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+    const tabs = [...elements.teamPokemonTabs.querySelectorAll('[data-team-pokemon-tab]')];
+    const currentIndex = tabs.indexOf(event.target.closest('[data-team-pokemon-tab]'));
+    if (currentIndex < 0 || !tabs.length) return;
+    event.preventDefault();
+    const nextIndex = event.key === 'Home'
+      ? 0
+      : event.key === 'End'
+        ? tabs.length - 1
+        : (currentIndex + (event.key === 'ArrowRight' ? 1 : tabs.length - 1)) % tabs.length;
+    tabs[nextIndex].click();
+  });
+  elements.teamNameInput?.addEventListener('change', (event) => {
+    renameActiveTeam(event.currentTarget.value);
+  });
   elements.teamRoster?.addEventListener('click', (event) => {
-    const statToggle = event.target.closest('[data-team-stat-toggle]');
-    if (statToggle) {
-      const segment = statToggle.closest('.team-stat-segment');
-      const panel = segment?.querySelector('.team-stat-panel');
-      const isOpening = Boolean(panel?.hidden);
-      closeTeamStatPopups();
+    const abilityToggle = event.target.closest('[data-team-ability-toggle]');
+    if (abilityToggle) {
+      const picker = abilityToggle.closest('.team-form-picker');
+      const menu = picker?.querySelector('.team-form-menu');
+      const isOpening = Boolean(menu?.hidden);
       closeTeamDropdowns();
-      if (panel && isOpening) {
-        panel.hidden = false;
-        segment.classList.add('is-stat-open');
-        statToggle.setAttribute('aria-expanded', 'true');
+      if (menu && isOpening) {
+        menu.hidden = false;
+        abilityToggle.setAttribute('aria-expanded', 'true');
       }
+      return;
+    }
+    const abilityOption = event.target.closest('[data-team-ability-value]');
+    if (abilityOption) {
+      setTeamAbility(abilityOption.dataset.teamPokemonKey, abilityOption.dataset.teamAbilityValue);
       return;
     }
     const moveToggle = event.target.closest('[data-team-move-toggle]');
@@ -470,6 +511,23 @@ async function initialize() {
       if (menu) menu.hidden = true;
       trigger?.setAttribute('aria-expanded', 'false');
       trigger?.focus();
+      return;
+    }
+    const teraToggle = event.target.closest('[data-team-tera-toggle]');
+    if (teraToggle) {
+      const picker = teraToggle.closest('.team-tera-picker');
+      const menu = picker?.querySelector('.team-tera-menu');
+      const isOpening = Boolean(menu?.hidden);
+      closeTeamDropdowns();
+      if (menu && isOpening) {
+        menu.hidden = false;
+        teraToggle.setAttribute('aria-expanded', 'true');
+      }
+      return;
+    }
+    const teraOption = event.target.closest('[data-team-tera-option]');
+    if (teraOption) {
+      setTeamTeraType(teraOption.dataset.teamPokemonKey, teraOption.dataset.teamTeraOption);
       return;
     }
     const moveOption = event.target.closest('[data-team-move-id]');
@@ -550,19 +608,8 @@ async function initialize() {
       }
       return;
     }
-    const statToggle = event.target.closest('[data-team-stat-toggle]');
-    const statPanel = event.target.closest('.team-stat-panel');
-    if (event.key === 'Escape' && (statToggle || statPanel)) {
-      const segment = (statToggle || statPanel).closest('.team-stat-segment');
-      if (segment && !segment.querySelector('.team-stat-panel').hidden) {
-        event.preventDefault();
-        closeTeamStatPopup(segment);
-        segment.querySelector('[data-team-stat-toggle]')?.focus();
-      }
-      return;
-    }
-    const trigger = event.target.closest('[data-team-form-toggle]');
-    const option = event.target.closest('.team-form-option');
+    const trigger = event.target.closest('[data-team-form-toggle], [data-team-ability-toggle], [data-team-tera-toggle]');
+    const option = event.target.closest('.team-form-option, .team-tera-option');
     const moveTrigger = event.target.closest('[data-team-move-toggle]');
     const moveOption = event.target.closest('.team-move-option');
     const moveSearch = event.target.closest('.team-move-search');
@@ -581,7 +628,7 @@ async function initialize() {
       }
       const picker = (trigger || option).closest('.team-form-picker');
       const menu = picker?.querySelector('.team-form-menu');
-      const menuTrigger = picker?.querySelector('[data-team-form-toggle]');
+      const menuTrigger = picker?.querySelector('[data-team-form-toggle], [data-team-ability-toggle], [data-team-tera-toggle]');
       if (menu && !menu.hidden) {
         event.preventDefault();
         menu.hidden = true;
@@ -619,7 +666,7 @@ async function initialize() {
     if (trigger && event.key === 'ArrowDown') {
       event.preventDefault();
       if (trigger.getAttribute('aria-expanded') !== 'true') trigger.click();
-      trigger.closest('.team-form-picker')?.querySelector('.team-form-option')?.focus();
+      trigger.closest('.team-form-picker')?.querySelector('.team-form-option, .team-tera-option')?.focus();
       return;
     }
     if (natureTrigger && event.key === 'ArrowDown') {
@@ -657,14 +704,17 @@ async function initialize() {
       if (!event.target.closest('.team-nature-picker')) closeTeamDropdowns();
       return;
     }
-    closeTeamStatPopups();
     if (event.target instanceof Element && event.target.closest('.team-form-picker, .team-move-picker')) return;
     closeTeamDropdowns();
   });
   document.getElementById('clearTeamButton')?.addEventListener('click', () => {
+    updateActiveTeamSlot({ name: `Team ${getActiveTeamIndex() + 1}` });
     saveActiveTeam([]);
     saveActiveTeamMoves({});
     saveActiveTeamStats({});
+    saveActiveTeamAbilities({});
+    updateActiveTeamSlot({ teamTeraTypes: {} });
+    selectedTeamPokemonKey = '';
     renderTeamBuilder();
   });
   bindDexSwitcher();
@@ -792,6 +842,7 @@ function bindDexSwitcher() {
   abilitydexTab.addEventListener('click', () => switchDexView('ability'));
   teamBuilderTab.addEventListener('click', () => switchDexView('team'));
   pokemonCompareTab.addEventListener('click', () => switchDexView('compare'));
+  bindContentTabs(document.getElementById('teamBuilderView'), 'team-builder', () => {});
 }
 
 function switchDexView(dex) {
@@ -820,14 +871,6 @@ function switchDexView(dex) {
     '--dex-active-index',
     String(Object.keys(tabs).indexOf(dex))
   );
-  const activeView = views[dex];
-  activeView.classList.remove('dex-view-enter');
-  void activeView.offsetWidth;
-  activeView.classList.add('dex-view-enter');
-  activeView.addEventListener('animationend', () => {
-    activeView.classList.remove('dex-view-enter');
-  }, { once: true });
-  requestAnimationFrame(() => scrollToSelectedDexEntry(dex));
   const dexTitles = {
     pokemon: ['PokéDex Live', 'PokéDex Live'],
     move: ['PokéDex Live', 'MoveDex Live'],
@@ -849,8 +892,9 @@ function switchDexView(dex) {
   const showRandom = dex !== 'team' && dex !== 'compare';
   elements.randomButton.hidden = !showRandom;
   elements.floatingRandomButton.hidden = !showRandom;
-  elements.sidebarToggleButton.hidden = dex === 'compare';
-  elements.floatingSidebarButton.hidden = dex === 'compare';
+  const showSidebarToggle = dex !== 'compare';
+  elements.sidebarToggleButton.hidden = !showSidebarToggle;
+  elements.floatingSidebarButton.hidden = !showSidebarToggle;
   if (dex === 'pokemon' && pokemonGridViewEnabled) renderPokemonGridPicker(filteredPokemon);
   initializeDexView(dex);
 }
@@ -1441,7 +1485,7 @@ function handleAuthSubmit(event) {
       if (message) message.textContent = 'That username already exists on this browser.';
       return;
     }
-    profiles[username] = { password, favorites: [], notes: {}, team: [], collection: {}, shiny: {} };
+    profiles[username] = { password, favorites: [], notes: {}, team: [], teams: [], activeTeamIndex: 0, collection: {}, shiny: {} };
     saveProfiles(profiles);
   } else if (!profiles[username] || profiles[username].password !== password) {
     if (message) message.textContent = 'Username or password is incorrect.';
@@ -2636,95 +2680,218 @@ function selectAbility(ability) {
   if (selectedDex === 'ability') scrollToSelectedDexEntry('ability');
 }
 
-function getActiveTeamKeys() {
-  const normalizeTeam = (team) => [...new Set(team.filter((key) => (
-    typeof key === 'string' && (!pokemonByKey.size || pokemonByKey.has(key))
-  )))].slice(0, TEAM_SIZE);
+function createEmptyTeam(index) {
+  return { name: `Team ${index + 1}`, team: [], teamMoves: {}, teamStats: {}, teamAbilities: {}, teamTeraTypes: {} };
+}
+
+function getActiveTeamIndex() {
+  const rawIndex = currentUsername
+    ? getCurrentProfile()?.activeTeamIndex
+    : localStorage.getItem(GUEST_ACTIVE_TEAM_INDEX_KEY);
+  const index = Number(rawIndex);
+  return Number.isInteger(index) ? Math.max(0, Math.min(TEAM_SLOT_COUNT - 1, index)) : 0;
+}
+
+function normalizeTeamSlots(savedSlots, legacyData = {}) {
+  const slots = Array.isArray(savedSlots) ? savedSlots.slice(0, TEAM_SLOT_COUNT) : [];
+  if (!slots.length) {
+    slots.push({
+      ...createEmptyTeam(0),
+      team: legacyData.team,
+      teamMoves: legacyData.teamMoves,
+      teamStats: legacyData.teamStats,
+      teamAbilities: legacyData.teamAbilities,
+      teamTeraTypes: legacyData.teamTeraTypes
+    });
+  }
+  return Array.from({ length: TEAM_SLOT_COUNT }, (_, index) => {
+    const saved = slots[index] && typeof slots[index] === 'object' ? slots[index] : createEmptyTeam(index);
+    const team = Array.isArray(saved.team) ? [...new Set(saved.team.filter((key) => (
+      typeof key === 'string' && (!pokemonByKey.size || pokemonByKey.has(key))
+    )))].slice(0, TEAM_SIZE) : [];
+    const objectOrEmpty = (value) => value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+    return {
+      name: typeof saved.name === 'string' && saved.name.trim() ? saved.name.trim().slice(0, 24) : `Team ${index + 1}`,
+      team,
+      teamMoves: objectOrEmpty(saved.teamMoves),
+      teamStats: objectOrEmpty(saved.teamStats),
+      teamAbilities: objectOrEmpty(saved.teamAbilities),
+      teamTeraTypes: objectOrEmpty(saved.teamTeraTypes)
+    };
+  });
+}
+
+function getSavedTeamSlots() {
   if (currentUsername) {
     const profile = getCurrentProfile();
-    return Array.isArray(profile?.team) ? normalizeTeam(profile.team) : [];
+    if (!profile) return normalizeTeamSlots([]);
+    return normalizeTeamSlots(profile.teams, profile);
   }
   try {
-    const team = JSON.parse(localStorage.getItem(GUEST_TEAM_STORAGE_KEY) || '[]');
-    return Array.isArray(team) ? normalizeTeam(team) : [];
+    const stored = JSON.parse(localStorage.getItem(GUEST_TEAMS_STORAGE_KEY) || 'null');
+    if (Array.isArray(stored)) return normalizeTeamSlots(stored);
+    return normalizeTeamSlots([], {
+      team: JSON.parse(localStorage.getItem(GUEST_TEAM_STORAGE_KEY) || '[]'),
+      teamMoves: JSON.parse(localStorage.getItem(GUEST_TEAM_MOVES_STORAGE_KEY) || '{}'),
+      teamStats: JSON.parse(localStorage.getItem(GUEST_TEAM_STATS_STORAGE_KEY) || '{}'),
+      teamTeraTypes: JSON.parse(localStorage.getItem(GUEST_TEAM_TERA_TYPES_KEY) || '{}')
+    });
   } catch (error) {
-    console.warn('Unable to read guest team', error);
-    return [];
+    console.warn('Unable to read saved teams', error);
+    return normalizeTeamSlots([]);
   }
+}
+
+function saveTeamSlots(slots) {
+  const normalizedSlots = normalizeTeamSlots(slots);
+  const activeSlot = normalizedSlots[getActiveTeamIndex()];
+  if (currentUsername) {
+    const profiles = getProfiles();
+    const profile = profiles[currentUsername];
+    if (!profile) {
+      console.error('Unable to save teams: active profile was not found.');
+      return;
+    }
+    profile.teams = normalizedSlots;
+    profile.team = activeSlot.team;
+    profile.teamMoves = activeSlot.teamMoves;
+    profile.teamStats = activeSlot.teamStats;
+    profile.teamAbilities = activeSlot.teamAbilities;
+    profile.teamTeraTypes = activeSlot.teamTeraTypes;
+    saveProfiles(profiles);
+    return;
+  }
+  localStorage.setItem(GUEST_TEAMS_STORAGE_KEY, JSON.stringify(normalizedSlots));
+  localStorage.setItem(GUEST_TEAM_STORAGE_KEY, JSON.stringify(activeSlot.team));
+  localStorage.setItem(GUEST_TEAM_MOVES_STORAGE_KEY, JSON.stringify(activeSlot.teamMoves));
+  localStorage.setItem(GUEST_TEAM_STATS_STORAGE_KEY, JSON.stringify(activeSlot.teamStats));
+  localStorage.setItem(GUEST_TEAM_TERA_TYPES_KEY, JSON.stringify(activeSlot.teamTeraTypes));
+}
+
+function getActiveTeamSlot() {
+  return getSavedTeamSlots()[getActiveTeamIndex()];
+}
+
+function updateActiveTeamSlot(update) {
+  const slots = getSavedTeamSlots();
+  slots[getActiveTeamIndex()] = { ...slots[getActiveTeamIndex()], ...update };
+  saveTeamSlots(slots);
+}
+
+function getActiveTeamKeys() {
+  return getActiveTeamSlot().team;
 }
 
 function saveActiveTeam(team) {
-  const pokemonKeys = team.slice(0, TEAM_SIZE);
-  if (currentUsername) {
-    const profiles = getProfiles();
-    const profile = profiles[currentUsername];
-    if (!profile) {
-      console.error('Unable to save team: active profile was not found.');
-      return;
-    }
-    profile.team = pokemonKeys;
-    saveProfiles(profiles);
-    return;
-  }
-  localStorage.setItem(GUEST_TEAM_STORAGE_KEY, JSON.stringify(pokemonKeys));
+  updateActiveTeamSlot({ team: team.slice(0, TEAM_SIZE) });
 }
 
 function getActiveTeamMoves() {
-  if (currentUsername) {
-    const profile = getCurrentProfile();
-    return profile?.teamMoves && typeof profile.teamMoves === 'object' ? profile.teamMoves : {};
-  }
-  try {
-    const moves = JSON.parse(localStorage.getItem(GUEST_TEAM_MOVES_STORAGE_KEY) || '{}');
-    return moves && typeof moves === 'object' && !Array.isArray(moves) ? moves : {};
-  } catch (error) {
-    console.warn('Unable to read guest team move plan', error);
-    return {};
-  }
+  return getActiveTeamSlot().teamMoves;
 }
 
 function saveActiveTeamMoves(teamMoves) {
-  if (currentUsername) {
-    const profiles = getProfiles();
-    const profile = profiles[currentUsername];
-    if (!profile) {
-      console.error('Unable to save move plan: active profile was not found.');
-      return;
-    }
-    profile.teamMoves = teamMoves;
-    saveProfiles(profiles);
-    return;
-  }
-  localStorage.setItem(GUEST_TEAM_MOVES_STORAGE_KEY, JSON.stringify(teamMoves));
+  updateActiveTeamSlot({ teamMoves });
 }
 
 function getActiveTeamStats() {
-  if (currentUsername) {
-    const teamStats = getCurrentProfile()?.teamStats;
-    return teamStats && typeof teamStats === 'object' && !Array.isArray(teamStats) ? teamStats : {};
-  }
-  try {
-    const teamStats = JSON.parse(localStorage.getItem(GUEST_TEAM_STATS_STORAGE_KEY) || '{}');
-    return teamStats && typeof teamStats === 'object' && !Array.isArray(teamStats) ? teamStats : {};
-  } catch (error) {
-    console.warn('Unable to read guest team stat values', error);
-    return {};
-  }
+  return getActiveTeamSlot().teamStats;
 }
 
 function saveActiveTeamStats(teamStats) {
+  updateActiveTeamSlot({ teamStats });
+}
+
+function getActiveTeamAbilities() {
+  return getActiveTeamSlot().teamAbilities;
+}
+
+function saveActiveTeamAbilities(teamAbilities) {
+  updateActiveTeamSlot({ teamAbilities });
+}
+
+function getActiveTeamTeraTypes() {
+  return getActiveTeamSlot().teamTeraTypes;
+}
+
+function getTeamTeraType(pokemon) {
+  const selectedType = getActiveTeamTeraTypes()[getPokemonKey(pokemon)];
+  return selectedType && [...TYPE_ORDER, 'Stellar'].includes(selectedType)
+    ? selectedType
+    : pokemon.types.find(Boolean) || '';
+}
+
+function setTeamTeraType(pokemonKey, teraType) {
+  if (!pokemonByKey.has(pokemonKey) || ![...TYPE_ORDER, 'Stellar'].includes(teraType)) return;
+  const teraTypes = getActiveTeamTeraTypes();
+  teraTypes[pokemonKey] = teraType;
+  updateActiveTeamSlot({ teamTeraTypes: teraTypes });
+  renderTeamBuilder({ renderOptions: false });
+}
+
+function getTeamAbilityOptions(pokemon) {
+  return [
+    ...pokemon.abilities.filter(Boolean).map((ability) => ({ ability, hidden: false })),
+    ...(pokemon.hiddenAbility ? [{ ability: pokemon.hiddenAbility, hidden: true }] : [])
+  ];
+}
+
+function getTeamAbility(pokemon) {
+  const options = getTeamAbilityOptions(pokemon);
+  const savedAbility = getActiveTeamAbilities()[getPokemonKey(pokemon)];
+  return options.some(({ ability }) => ability === savedAbility)
+    ? savedAbility
+    : options[0]?.ability || '';
+}
+
+function setTeamAbility(pokemonKey, ability) {
+  const pokemon = pokemonByKey.get(pokemonKey);
+  if (!pokemon || !getTeamAbilityOptions(pokemon).some((option) => option.ability === ability)) return;
+  const teamAbilities = getActiveTeamAbilities();
+  teamAbilities[pokemonKey] = ability;
+  saveActiveTeamAbilities(teamAbilities);
+  renderTeamBuilder({ renderOptions: false });
+}
+
+function renderTeamAbilityPicker(pokemon) {
+  const pokemonKey = getPokemonKey(pokemon);
+  const selectedAbility = getTeamAbility(pokemon);
+  const options = getTeamAbilityOptions(pokemon);
+  const menu = options.map(({ ability, hidden }) => {
+    const selected = ability === selectedAbility;
+    return `<button type="button" role="option" aria-selected="${selected}" class="team-form-option${selected ? ' selected' : ''}" data-team-pokemon-key="${escapeHtml(pokemonKey)}" data-team-ability-value="${escapeHtml(ability)}"><span>${escapeHtml(ability)}${hidden ? ' (Hidden)' : ''}</span>${selected ? '<span class="team-form-check" aria-hidden="true">✓</span>' : ''}</button>`;
+  }).join('');
+  return `<div class="team-ability-control"><span class="team-form-label">Ability</span><div class="team-form-picker"><button type="button" class="team-form-trigger" data-team-ability-toggle aria-haspopup="listbox" aria-expanded="false" aria-label="Choose ability for ${escapeHtml(pokemon.displayName || pokemon.name)}"><span>${escapeHtml(selectedAbility || 'No ability listed')}</span><span class="team-form-chevron" aria-hidden="true"></span></button><div class="team-form-menu" role="listbox" aria-label="Choose an ability for ${escapeHtml(pokemon.displayName || pokemon.name)}" hidden>${menu || '<span class="team-analysis-note">No abilities listed.</span>'}</div></div></div>`;
+}
+
+function setActiveTeamIndex(index) {
+  if (!Number.isInteger(index) || index < 0 || index >= TEAM_SLOT_COUNT) return;
+  const slots = getSavedTeamSlots();
   if (currentUsername) {
     const profiles = getProfiles();
     const profile = profiles[currentUsername];
     if (!profile) {
-      console.error('Unable to save team stat values: active profile was not found.');
+      console.error('Unable to switch teams: active profile was not found.');
       return;
     }
-    profile.teamStats = teamStats;
+    profile.activeTeamIndex = index;
     saveProfiles(profiles);
+  } else {
+    localStorage.setItem(GUEST_ACTIVE_TEAM_INDEX_KEY, String(index));
+  }
+  selectedTeamPokemonKey = '';
+  saveTeamSlots(slots);
+  renderTeamBuilder();
+}
+
+function renameActiveTeam(name) {
+  const cleanName = String(name || '').trim().slice(0, 24);
+  if (!cleanName) {
+    renderTeamManagement();
     return;
   }
-  localStorage.setItem(GUEST_TEAM_STATS_STORAGE_KEY, JSON.stringify(teamStats));
+  updateActiveTeamSlot({ name: cleanName });
+  renderTeamManagement();
 }
 
 function getTeamStatSettings(pokemonKey) {
@@ -2771,6 +2938,7 @@ function setTeamStatSetting(pokemonKey, setting, stat, rawValue) {
   }
   teamStats[pokemonKey] = current;
   saveActiveTeamStats(teamStats);
+  renderTeamAnalysis(getActiveTeamKeys().map((key) => pokemonByKey.get(key)).filter(Boolean));
 }
 
 function getTeamStatValues(pokemon, settings) {
@@ -2822,18 +2990,7 @@ function updateTeamStatDisplay(pokemonKey) {
     if (isSelected && !check) option.insertAdjacentHTML('beforeend', '<span class="team-form-check" aria-hidden="true">✓</span>');
     if (!isSelected) check?.remove();
   });
-}
-
-function closeTeamStatPopup(segment) {
-  const panel = segment?.querySelector('.team-stat-panel');
-  if (!panel) return;
-  panel.hidden = true;
-  segment.classList.remove('is-stat-open');
-  segment.querySelector('[data-team-stat-toggle]')?.setAttribute('aria-expanded', 'false');
-}
-
-function closeTeamStatPopups() {
-  elements.teamRoster?.querySelectorAll('.team-stat-segment').forEach(closeTeamStatPopup);
+  renderTeamOverview(getActiveTeamKeys().map((key) => pokemonByKey.get(key)).filter(Boolean));
 }
 
 function renderTeamStatValues(pokemon) {
@@ -2846,9 +3003,6 @@ function renderTeamStatValues(pokemon) {
       return `<button type="button" role="option" aria-selected="${isSelected}" class="team-nature-option${isSelected ? ' selected' : ''}" data-team-pokemon-key="${escapeHtml(pokemonKey)}" data-team-nature-option="${nature}"><span>${escapeHtml(getNatureLabel(nature))}</span>${isSelected ? '<span class="team-form-check" aria-hidden="true">✓</span>' : ''}</button>`;
     })
     .join('');
-  const summary = TEAM_STAT_KEYS.map((stat) => (
-    `<span><strong>${stat}</strong> ${values[stat]}</span>`
-  )).join('');
   const rows = TEAM_STAT_KEYS.map((stat) => `
     <label class="team-stat-row">
       <strong>${stat}</strong>
@@ -2858,15 +3012,8 @@ function renderTeamStatValues(pokemon) {
     </label>`).join('');
   return `
     <section class="team-stat-segment" data-team-stat-pokemon-key="${escapeHtml(pokemonKey)}">
-      <button type="button" class="team-stat-toggle" data-team-stat-toggle aria-expanded="false" aria-label="Edit level, IVs, and EVs for ${escapeHtml(pokemon.displayName || pokemon.name)}">
-        <span class="team-stat-toggle-heading">Stat Values</span>
-        <span class="team-stat-summary-row">
-          <span class="team-stat-summary">${summary}</span>
-          <span class="team-stat-nature-summary">${escapeHtml(settings.nature)}</span>
-        </span>
-      </button>
-      <div class="team-stat-panel" hidden>
-        <div class="team-stat-panel-heading"><strong>Stat Values</strong><span>EVs: ${TEAM_STAT_KEYS.reduce((total, stat) => total + settings.evs[stat], 0)} / 510</span></div>
+      <div class="team-stat-panel-heading"><strong>Battle stats</strong><span>EVs: ${TEAM_STAT_KEYS.reduce((total, stat) => total + settings.evs[stat], 0)} / 510</span></div>
+      <div class="team-stat-controls">
         <label class="team-stat-level-input">Level <input type="number" min="1" max="100" step="1" value="${settings.level}" data-team-pokemon-key="${escapeHtml(pokemonKey)}" data-team-stat-level aria-label="Level for ${escapeHtml(pokemon.name)}" /></label>
         <div class="team-stat-nature-input">
           <span>Nature</span>
@@ -2877,8 +3024,8 @@ function renderTeamStatValues(pokemon) {
             <div class="team-form-menu team-nature-menu" role="listbox" aria-label="Choose a nature for ${escapeHtml(pokemon.name)}" hidden>${natureOptions}</div>
           </div>
         </div>
-        <div class="team-stat-rows">${rows}</div>
       </div>
+      <div class="team-stat-rows">${rows}</div>
     </section>`;
 }
 
@@ -2893,6 +3040,7 @@ function setTeamMove(pokemonKey, slot, moveId) {
   selectedMoves[slot] = moveId || '';
   teamMoves[pokemonKey] = selectedMoves;
   saveActiveTeamMoves(teamMoves);
+  renderTeamOverview(getActiveTeamKeys().map((key) => pokemonByKey.get(key)).filter(Boolean));
   const planner = [...elements.teamRoster.querySelectorAll('[data-team-move-planner]')]
     .find((element) => element.dataset.teamMovePlanner === pokemonKey);
   if (planner) {
@@ -2921,7 +3069,7 @@ function closeTeamDropdowns() {
     container?.querySelectorAll('.team-form-menu, .team-move-menu, .team-nature-menu').forEach((menu) => {
       menu.hidden = true;
     });
-    container?.querySelectorAll('[data-team-form-toggle], [data-team-move-toggle], [data-team-nature-toggle], [data-compare-form-toggle]').forEach((button) => {
+    container?.querySelectorAll('[data-team-form-toggle], [data-team-move-toggle], [data-team-nature-toggle], [data-team-tera-toggle], [data-compare-form-toggle]').forEach((button) => {
       button.setAttribute('aria-expanded', 'false');
     });
   });
@@ -2983,6 +3131,7 @@ function addPokemonToTeam(pokemonKey) {
   const alreadyInTeam = team.some((key) => pokemonByKey.get(key)?.group === pokemon.group);
   if (alreadyInTeam || team.length >= TEAM_SIZE) return;
   team.push(pokemonKey);
+  selectedTeamPokemonKey = pokemonKey;
   saveActiveTeam(team);
   renderTeamBuilder({ renderOptions: false });
 }
@@ -2994,6 +3143,7 @@ function changeTeamPokemonForm(teamIndex, pokemonKey) {
   const currentPokemon = pokemonByKey.get(team[teamIndex]);
   if (!currentPokemon || currentPokemon.group !== selectedPokemon.group) return;
   team[teamIndex] = pokemonKey;
+  selectedTeamPokemonKey = pokemonKey;
   saveActiveTeam(team);
   renderTeamBuilder({ renderOptions: false });
 }
@@ -3002,12 +3152,19 @@ function removePokemonFromTeam(index) {
   const team = getActiveTeamKeys();
   if (!Number.isInteger(index) || index < 0 || index >= team.length) return;
   const [removedKey] = team.splice(index, 1);
+  if (selectedTeamPokemonKey === removedKey) selectedTeamPokemonKey = team[Math.min(index, team.length - 1)] || '';
   const teamMoves = getActiveTeamMoves();
   delete teamMoves[removedKey];
   saveActiveTeamMoves(teamMoves);
   const teamStats = getActiveTeamStats();
   delete teamStats[removedKey];
   saveActiveTeamStats(teamStats);
+  const teamAbilities = getActiveTeamAbilities();
+  delete teamAbilities[removedKey];
+  saveActiveTeamAbilities(teamAbilities);
+  const teamTeraTypes = getActiveTeamTeraTypes();
+  delete teamTeraTypes[removedKey];
+  updateActiveTeamSlot({ teamTeraTypes });
   saveActiveTeam(team);
   renderTeamBuilder({ renderOptions: false });
 }
@@ -3023,8 +3180,6 @@ function renderTeamPokemonOptions() {
     || pokemon.name.toLowerCase().includes(query)
     || pokemon.types.some((type) => type.toLowerCase().includes(query))
   ));
-  const renderToken = teamPokemonRenderToken + 1;
-  teamPokemonRenderToken = renderToken;
   elements.teamPokemonCount.textContent = `${matches.length} Pokémon found`;
   elements.teamPokemonList.replaceChildren();
   if (!matches.length) {
@@ -3032,20 +3187,11 @@ function renderTeamPokemonOptions() {
     return;
   }
 
-  const batchSize = 40;
-  let index = 0;
-  const appendBatch = () => {
-    if (renderToken !== teamPokemonRenderToken) return;
-    const batch = matches.slice(index, index + batchSize).map((pokemon) => {
-      const key = getPokemonKey(pokemon);
-      return `<button type="button" class="team-pokemon-option" data-team-add="${escapeHtml(key)}"><span class="team-option-copy"><span class="team-option-name"><span class="team-option-number">#${escapeHtml(pokemon.number)}</span>${escapeHtml(pokemon.displayName || pokemon.name)}</span><span class="team-option-types">${pokemon.types.filter(Boolean).map(renderMoveTypePill).join('')}</span></span><span class="team-option-action"></span></button>`;
-    }).join('');
-    elements.teamPokemonList.insertAdjacentHTML('beforeend', batch);
-    updateTeamPokemonOptions();
-    index += batchSize;
-    if (index < matches.length) requestAnimationFrame(appendBatch);
-  };
-  appendBatch();
+  elements.teamPokemonList.innerHTML = matches.map((pokemon) => {
+    const key = getPokemonKey(pokemon);
+    return `<button type="button" class="team-pokemon-option" data-team-add="${escapeHtml(key)}"><span class="team-option-copy"><span class="team-option-name"><span class="team-option-number">#${escapeHtml(pokemon.number)}</span>${escapeHtml(pokemon.displayName || pokemon.name)}</span><span class="team-option-types">${pokemon.types.filter(Boolean).map(renderMoveTypePill).join('')}</span></span><span class="team-option-action"></span></button>`;
+  }).join('');
+  updateTeamPokemonOptions();
 }
 
 function updateTeamPokemonOptions() {
@@ -3058,25 +3204,6 @@ function updateTeamPokemonOptions() {
     const isAdded = team.some((teamKey) => pokemonByKey.get(teamKey)?.group === pokemon.group);
     button.disabled = full || isAdded;
     button.querySelector('.team-option-action').textContent = isAdded ? 'On team' : full ? 'Team full' : '+ Add';
-  });
-}
-
-function getTeamDefensiveMatchups(team) {
-  return TYPE_ORDER.map((attackType) => {
-    const weak = [];
-    const resist = [];
-    const immune = [];
-    team.forEach((pokemon) => {
-      const multiplier = pokemon.types.filter(Boolean).reduce(
-        (total, defendingType) => total * getTypeMultiplier(attackType, defendingType),
-        1
-      );
-      const name = pokemon.displayName || pokemon.name;
-      if (multiplier > 1) weak.push(name);
-      else if (multiplier === 0) immune.push(name);
-      else if (multiplier < 1) resist.push(name);
-    });
-    return { attackType, weak, resist, immune };
   });
 }
 
@@ -3503,10 +3630,23 @@ function renderPokemonComparison() {
 }
 
 function renderTeamAnalysis(team) {
-  const representedTypes = [...new Set(team.flatMap((pokemon) => pokemon.types.filter(Boolean)))];
-  const matchups = getTeamDefensiveMatchups(team);
-  const sharedWeaknesses = matchups.filter(({ weak }) => weak.length > 1);
-  const noDefensiveAnswer = matchups.filter(({ resist, immune }) => !resist.length && !immune.length);
+  const defensiveRows = team.map((pokemon) => ({
+    pokemon,
+    multipliers: TYPE_ORDER.map((attackType) => pokemon.types.filter(Boolean).reduce(
+      (total, defendingType) => total * getTypeMultiplier(attackType, defendingType),
+      1
+    ))
+  }));
+  const defensiveTotals = TYPE_ORDER.map((type, typeIndex) => {
+    const values = defensiveRows.map(({ multipliers }) => multipliers[typeIndex]);
+    return {
+      type,
+      weak: values.filter((value) => value > 1).length,
+      resist: values.filter((value) => value > 0 && value < 1).length,
+      immune: values.filter((value) => value === 0).length,
+      neutral: values.filter((value) => value === 1).length
+    };
+  });
   const teamMoves = getActiveTeamMoves();
   const selectedMoves = team.flatMap((pokemon) => {
     const availableIds = new Set(getPokemonTeamMoves(pokemon).map(({ move }) => move.id));
@@ -3516,58 +3656,229 @@ function renderTeamAnalysis(team) {
       .map((id) => movesLookup[id])
       .filter(Boolean)
       .filter((move) => String(move.category || '').trim().toLowerCase() !== 'status')
-      .map((move) => ({ ...move, pokemonName: pokemon.displayName || pokemon.name }));
+      .map((move) => ({ ...move, pokemonKey: getPokemonKey(pokemon), pokemonName: pokemon.displayName || pokemon.name }));
   });
-  const offensiveCoverage = TYPE_ORDER.map((defendingType) => ({
-    defendingType,
-    moves: selectedMoves.filter((move) => getTypeMultiplier(move.type, defendingType) > 1)
+  const offensiveRows = team.map((pokemon) => {
+    const moves = selectedMoves.filter((move) => move.pokemonKey === getPokemonKey(pokemon));
+    return {
+      pokemon,
+      moves,
+      multipliers: TYPE_ORDER.map((defendingType) => moves.length
+        ? Math.max(...moves.map((move) => getTypeMultiplier(move.type, defendingType)))
+        : null)
+    };
+  });
+  const offensiveTotals = TYPE_ORDER.map((type, typeIndex) => ({
+    type,
+    attackers: offensiveRows.filter(({ multipliers }) => multipliers[typeIndex] > 1).length
   }));
+  const statLabels = [['HP', 'HP'], ['Attack', 'ATK'], ['Defense', 'DEF'], ['Sp. Atk', 'SpA'], ['Sp. Def', 'SpD'], ['Speed', 'SPE']];
+  const teamStatValues = team.map((pokemon) => ({
+    pokemon,
+    values: getTeamStatValues(pokemon, getTeamStatSettings(getPokemonKey(pokemon)))
+  }));
+  const radarColors = ['#38bdf8', '#fb7185', '#4ade80', '#c084fc', '#fbbf24', '#2dd4bf'];
+  const radarCenter = { x: 300, y: 250 };
+  const radarRadius = 170;
+  const radarMaximums = Object.fromEntries(statLabels.map(([, key]) => [
+    key,
+    Math.max(1, ...teamStatValues.map(({ values }) => values[key])) * 1.15
+  ]));
+  const radarPoint = (axis, ratio, radius = radarRadius) => {
+    const angle = -Math.PI / 2 + (Math.PI * 2 * axis) / statLabels.length;
+    return `${(radarCenter.x + Math.cos(angle) * radius * ratio).toFixed(1)},${(radarCenter.y + Math.sin(angle) * radius * ratio).toFixed(1)}`;
+  };
+  const radarGrid = [0.2, 0.4, 0.6, 0.8, 1].map((ratio) => (
+    `<polygon class="team-stat-radar-grid" points="${statLabels.map((_, axis) => radarPoint(axis, ratio)).join(' ')}" />`
+  )).join('');
+  const radarAxes = statLabels.map((_, axis) => {
+    const [x, y] = radarPoint(axis, 1).split(',');
+    return `<line class="team-stat-radar-axis" x1="${radarCenter.x}" y1="${radarCenter.y}" x2="${x}" y2="${y}" />`;
+  }).join('');
+  const radarLabels = statLabels.map(([label], axis) => {
+    const [x, y] = radarPoint(axis, 1, radarRadius + 31).split(',');
+    const anchor = Number(x) < radarCenter.x - 10 ? 'end' : Number(x) > radarCenter.x + 10 ? 'start' : 'middle';
+    return `<text class="team-stat-radar-label" x="${x}" y="${y}" text-anchor="${anchor}">${escapeHtml(label)}</text>`;
+  }).join('');
+  const radarSeries = teamStatValues.map(({ values }, teamIndex) => {
+    const color = radarColors[teamIndex % radarColors.length];
+    const points = statLabels.map(([, key], axis) => (
+      radarPoint(axis, Math.min(1, values[key] / radarMaximums[key]))
+    )).join(' ');
+    const valueLabels = statLabels.map(([, key], axis) => {
+      const angle = -Math.PI / 2 + (Math.PI * 2 * axis) / statLabels.length;
+      const labelRadius = Math.min(1, values[key] / radarMaximums[key]) * radarRadius + 14;
+      const x = radarCenter.x + Math.cos(angle) * labelRadius;
+      const y = radarCenter.y + Math.sin(angle) * labelRadius;
+      const anchor = x < radarCenter.x - 10 ? 'end' : x > radarCenter.x + 10 ? 'start' : 'middle';
+      return `<text x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="${anchor}">${values[key]}</text>`;
+    }).join('');
+    return `<polygon class="team-stat-radar-series" data-team-stat-index="${teamIndex}" points="${points}" fill="${color}" stroke="${color}" /><g class="team-stat-radar-values" data-team-stat-index="${teamIndex}" style="--team-stat-color:${color}" aria-hidden="true">${valueLabels}</g>`;
+  }).join('');
+  const statBars = teamStatValues.map(({ pokemon, values }, index) => {
+    const color = radarColors[index % radarColors.length];
+    const stats = statLabels.map(([label, key]) => {
+      const maxValue = Math.max(...teamStatValues.map(({ values: otherValues }) => otherValues[key]));
+      const barWidth = maxValue ? Math.round(values[key] / maxValue * 100) : 0;
+      return `<div class="team-stat-bar-row"><span>${escapeHtml(label)}</span><strong>${values[key]}</strong><span class="team-stat-bar-track"><i style="width:${barWidth}%;--team-stat-color:${color}"></i></span></div>`;
+    }).join('');
+    return `<section class="team-stat-bar-member"><h4><i style="--team-stat-color:${color}"></i>${escapeHtml(pokemon.displayName || pokemon.name)}</h4>${stats}</section>`;
+  }).join('');
+  const statComparison = team.length
+    ? `<div class="team-stat-comparison">
+        <div class="team-stat-view-toggle" role="group" aria-label="Stat comparison display">
+          <button type="button" class="team-stat-view-button${selectedTeamStatView === 'radar' ? ' active' : ''}" data-team-stat-view="radar" aria-pressed="${selectedTeamStatView === 'radar'}">Chart</button>
+          <button type="button" class="team-stat-view-button${selectedTeamStatView === 'bars' ? ' active' : ''}" data-team-stat-view="bars" aria-pressed="${selectedTeamStatView === 'bars'}">Bars</button>
+        </div>
+        <div class="team-stat-radar-view team-stat-view"${selectedTeamStatView === 'radar' ? '' : ' hidden'}>
+        <svg class="team-stat-radar" viewBox="0 0 600 500" role="img" aria-label="Team Pokémon stat chart">
+          <desc>Chart comparing HP, Attack, Defense, Special Attack, Special Defense, and Speed. Values use level, nature, IVs, and EVs.</desc>
+          ${radarGrid}${radarAxes}${radarSeries}${radarLabels}
+        </svg>
+        <div class="team-stat-radar-legend">${teamStatValues.map(({ pokemon }, index) => (
+          `<div class="team-stat-radar-legend-item" data-team-stat-index="${index}">
+            <button type="button" class="team-stat-radar-legend-button"><i style="--team-stat-color:${radarColors[index % radarColors.length]}"></i>${escapeHtml(pokemon.displayName || pokemon.name)}</button>
+          </div>`
+        )).join('')}</div>
+        </div>
+        <div class="team-stat-bar-view team-stat-view"${selectedTeamStatView === 'bars' ? '' : ' hidden'}>${statBars}</div>
+      </div>`
+    : '<p class="small team-empty-message">Add Pokémon to compare their calculated stats.</p>';
+  const memberHeaders = (rows, includeMoves = false) => rows.map(({ pokemon, moves }) => `
+    <th scope="col"><span class="team-analysis-member team-analysis-column-member">
+      <img src="sprites/${escapeHtml(getPokemonSpriteBase(pokemon))}.png" alt="" loading="lazy" />
+      <span><strong>${escapeHtml(pokemon.displayName || pokemon.name)}</strong><small>${pokemon.types.filter(Boolean).map(escapeHtml).join(' / ') || 'Unknown type'}</small>${includeMoves ? `<small>${moves.length ? moves.map((move) => `${escapeHtml(move.name)} · ${escapeHtml(move.type)}`).join(', ') : 'No damaging moves'}</small>` : ''}</span>
+    </span></th>`).join('');
+  const typeRowHeader = (type) => `<th scope="row" class="team-analysis-type-heading">${renderMoveTypePill(type)}</th>`;
+  const effectivenessCell = (value) => {
+    if (value === null) return '<td class="team-effectiveness-cell is-unavailable">—</td>';
+    const label = value === 0 ? '0×' : `${value < 1 ? Number(value.toFixed(2)) : value}×`;
+    const state = value === 0 ? 'immune' : value > 1 ? 'weak' : value < 1 ? 'resist' : 'neutral';
+    return `<td class="team-effectiveness-cell is-${state}" title="${label} effectiveness">${label}</td>`;
+  };
+  const defensiveTable = `<div class="team-analysis-table-wrap"><table class="team-analysis-table">
+    <thead><tr><th scope="col">Attack type</th>${memberHeaders(defensiveRows)}</tr></thead>
+    <tbody>${TYPE_ORDER.map((type, typeIndex) => `<tr>
+      ${typeRowHeader(type)}
+      ${defensiveRows.map(({ multipliers }) => effectivenessCell(multipliers[typeIndex])).join('')}
+    </tr>`).join('')}</tbody>
+  </table></div>`;
+  const defensiveSummary = `<aside class="team-analysis-summary-panel">
+    <h4>Team totals</h4>
+    <div class="team-analysis-metrics">
+      <div><strong>${defensiveTotals.reduce((total, row) => total + row.weak, 0)}</strong><span>weak matchups</span></div>
+      <div><strong>${defensiveTotals.reduce((total, row) => total + row.resist, 0)}</strong><span>resistances</span></div>
+      <div><strong>${defensiveTotals.reduce((total, row) => total + row.immune, 0)}</strong><span>immunities</span></div>
+    </div>
+    <div class="team-analysis-type-summary">${defensiveTotals.map(({ type, weak, resist, immune }) => `
+      <div class="team-analysis-type-summary-row">${renderMoveTypePill(type)}<span><b class="is-weak">${weak}</b> / <b class="is-resist">${resist}</b> / <b class="is-immune">${immune}</b></span></div>`).join('')}
+    </div>
+    <p class="team-analysis-note">Per type: Pokémon weak / resistant / immune to that attack.</p>
+  </aside>`;
+  const offensiveTable = `<div class="team-analysis-table-wrap"><table class="team-analysis-table">
+    <thead><tr><th scope="col">Target type</th>${memberHeaders(offensiveRows, true)}</tr></thead>
+    <tbody>${TYPE_ORDER.map((type, typeIndex) => `<tr>
+      ${typeRowHeader(type)}
+      ${offensiveRows.map(({ multipliers }) => effectivenessCell(multipliers[typeIndex])).join('')}
+    </tr>`).join('')}</tbody>
+  </table></div>`;
+  const coveredTypes = offensiveTotals.filter(({ attackers }) => attackers > 0).length;
+  const offensiveSummary = `<aside class="team-analysis-summary-panel">
+    <h4>Team totals</h4>
+    <div class="team-analysis-metrics">
+      <div><strong>${coveredTypes} / ${TYPE_ORDER.length}</strong><span>types hit super effectively</span></div>
+      <div><strong>${selectedMoves.length}</strong><span>damaging moves selected</span></div>
+    </div>
+    <div class="team-analysis-type-summary">${offensiveTotals.map(({ type, attackers }) => `
+      <div class="team-analysis-type-summary-row">${renderMoveTypePill(type)}<span><b class="${attackers ? 'is-resist' : ''}">${attackers}</b> Pokémon</span></div>`).join('')}
+    </div>
+    <p class="team-analysis-note">The matrix shows the strongest selected move against each single defending type.</p>
+  </aside>`;
   elements.teamAnalysis.innerHTML = `
     <div class="section-tabs" role="tablist" aria-label="Team analysis" data-content-tab-group="team">
       <button type="button" class="section-tab${selectedTeamAnalysisTab === 'defensive' ? ' active' : ''}" role="tab" aria-selected="${selectedTeamAnalysisTab === 'defensive'}" aria-controls="team-analysis-panel-defensive" tabindex="${selectedTeamAnalysisTab === 'defensive' ? '0' : '-1'}" data-content-tab="defensive">Defensive</button>
       <button type="button" class="section-tab${selectedTeamAnalysisTab === 'offensive' ? ' active' : ''}" role="tab" aria-selected="${selectedTeamAnalysisTab === 'offensive'}" aria-controls="team-analysis-panel-offensive" tabindex="${selectedTeamAnalysisTab === 'offensive' ? '0' : '-1'}" data-content-tab="offensive">Offensive</button>
+      <button type="button" class="section-tab${selectedTeamAnalysisTab === 'stats' ? ' active' : ''}" role="tab" aria-selected="${selectedTeamAnalysisTab === 'stats'}" aria-controls="team-analysis-panel-stats" tabindex="${selectedTeamAnalysisTab === 'stats' ? '0' : '-1'}" data-content-tab="stats">Stats</button>
     </div>
     <section id="team-analysis-panel-defensive" class="content-tab-panel${selectedTeamAnalysisTab === 'defensive' ? ' active' : ''}" role="tabpanel" data-content-panel="defensive"${selectedTeamAnalysisTab === 'defensive' ? '' : ' hidden'}>
-      ${team.length ? `
-        <section class="team-coverage">
-          <h3>Types represented</h3>
-          <div class="team-coverage-types">${representedTypes.map(renderMoveTypePill).join('') || '—'}</div>
-        </section>
-        <section class="team-matchups">
-          <h3>Defensive matchups</h3>
-          <p class="team-analysis-summary">${sharedWeaknesses.length
-            ? `${sharedWeaknesses.length} shared weakness${sharedWeaknesses.length === 1 ? '' : 'es'} affect multiple team members.`
-            : 'No attacking type hits multiple team members super effectively.'}</p>
-          ${noDefensiveAnswer.length
-            ? `<p class="team-analysis-note">No team member resists or is immune to: ${noDefensiveAnswer.map(({ attackType }) => escapeHtml(attackType)).join(', ')}.</p>`
-            : '<p class="team-analysis-note">The team has at least one resistance or immunity to every attacking type.</p>'}
-          <div class="team-matchup-list">${matchups.map(({ attackType, weak, resist, immune }) => `
-            <div class="team-matchup-row${weak.length > 1 ? ' has-shared-weakness' : ''}">
-              ${renderMoveTypePill(attackType)}
-              <span class="team-matchup-detail">
-                <span class="team-matchup-stats">${weak.length ? `<span class="team-matchup-weak">Weak ${weak.length}</span>` : ''}${resist.length ? `<span class="team-matchup-resist">Resist ${resist.length}</span>` : ''}${immune.length ? `<span class="team-matchup-immune">Immune ${immune.length}</span>` : ''}</span>
-                <span class="team-matchup-members">${weak.length ? `<span class="team-matchup-weak">Weak to: ${weak.map(escapeHtml).join(', ')}</span>` : ''}${resist.length ? `<span class="team-matchup-resist">Resisted by: ${resist.map(escapeHtml).join(', ')}</span>` : ''}${immune.length ? `<span class="team-matchup-immune">Immune: ${immune.map(escapeHtml).join(', ')}</span>` : ''}</span>
-              </span>
-            </div>`).join('')}</div>
-        </section>` : '<p class="small team-empty-message">Add Pokémon to see defensive matchups.</p>'}
+      ${team.length ? `<div class="team-analysis-matrix-layout">${defensiveTable}${defensiveSummary}</div>` : '<p class="small team-empty-message">Add Pokémon to see defensive matchups.</p>'}
     </section>
     <section id="team-analysis-panel-offensive" class="content-tab-panel${selectedTeamAnalysisTab === 'offensive' ? ' active' : ''}" role="tabpanel" data-content-panel="offensive"${selectedTeamAnalysisTab === 'offensive' ? '' : ' hidden'}>
-      ${team.length ? `
-        <section class="team-offense">
-          <h3>Offensive coverage</h3>
-          <p class="team-analysis-note">${selectedMoves.length
-            ? 'Shows selected moves that deal super-effective damage against each single type.'
-            : 'Choose moves for your team to see super-effective coverage.'}</p>
-          <div class="team-offense-grid">${offensiveCoverage.map(({ defendingType, moves }) => `
-            <div class="team-offense-row${moves.length ? ' is-covered' : ''}">
-              ${renderMoveTypePill(defendingType)}
-              <span>${moves.length ? moves.map((move) => `${escapeHtml(move.name)} <small>(${escapeHtml(move.pokemonName)})</small>`).join(', ') : 'No super-effective move'}</span>
-            </div>`).join('')}</div>
-        </section>` : '<p class="small team-empty-message">Add Pokémon and plan moves to see offensive coverage.</p>'}
+      ${team.length ? `<div class="team-analysis-matrix-layout">${offensiveTable}${offensiveSummary}</div>` : '<p class="small team-empty-message">Add Pokémon and plan moves to see offensive coverage.</p>'}
     </section>`;
+  elements.teamAnalysis.insertAdjacentHTML('beforeend', `
+    <section id="team-analysis-panel-stats" class="content-tab-panel${selectedTeamAnalysisTab === 'stats' ? ' active' : ''}" role="tabpanel" data-content-panel="stats"${selectedTeamAnalysisTab === 'stats' ? '' : ' hidden'}>
+      <section class="team-stat-comparer">
+        ${statComparison}
+      </section>
+    </section>`);
   bindContentTabs(elements.teamAnalysis, 'team', (key) => {
     selectedTeamAnalysisTab = key;
   });
+  bindTeamStatComparison();
+}
+
+function bindTeamStatComparison() {
+  const comparison = elements.teamAnalysis.querySelector('.team-stat-comparison');
+  if (!comparison) return;
+  comparison.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-team-stat-view]');
+    if (!button) return;
+    selectedTeamStatView = button.dataset.teamStatView;
+    comparison.querySelectorAll('[data-team-stat-view]').forEach((item) => {
+      const isSelected = item === button;
+      item.classList.toggle('active', isSelected);
+      item.setAttribute('aria-pressed', String(isSelected));
+    });
+    comparison.querySelectorAll('.team-stat-view').forEach((view) => {
+      view.hidden = !view.classList.contains(`team-stat-${selectedTeamStatView === 'bars' ? 'bar' : 'radar'}-view`);
+    });
+  });
+  const setHighlightedPokemon = (index) => {
+    comparison.dataset.highlightedTeamStat = index;
+    comparison.querySelectorAll('.team-stat-radar-series').forEach((series) => {
+      series.classList.toggle('is-highlighted', series.dataset.teamStatIndex === index);
+      series.classList.toggle('is-dimmed', series.dataset.teamStatIndex !== index);
+    });
+    comparison.querySelectorAll('.team-stat-radar-values').forEach((values) => {
+      values.classList.toggle('is-active', values.dataset.teamStatIndex === index);
+    });
+  };
+  const clearHighlightedPokemon = () => {
+    delete comparison.dataset.highlightedTeamStat;
+    comparison.querySelectorAll('.team-stat-radar-series').forEach((series) => {
+      series.classList.remove('is-highlighted', 'is-dimmed');
+    });
+    comparison.querySelectorAll('.team-stat-radar-values').forEach((values) => {
+      values.classList.remove('is-active');
+    });
+  };
+  comparison.addEventListener('pointerover', (event) => {
+    const item = event.target.closest('.team-stat-radar-legend-item');
+    if (item) setHighlightedPokemon(item.dataset.teamStatIndex);
+  });
+  comparison.addEventListener('pointerout', (event) => {
+    const item = event.target.closest('.team-stat-radar-legend-item');
+    if (item && !item.contains(event.relatedTarget)) clearHighlightedPokemon();
+  });
+  comparison.addEventListener('focusin', (event) => {
+    const item = event.target.closest('.team-stat-radar-legend-item');
+    if (item) setHighlightedPokemon(item.dataset.teamStatIndex);
+  });
+  comparison.addEventListener('focusout', (event) => {
+    const item = event.target.closest('.team-stat-radar-legend-item');
+    if (item && !item.contains(event.relatedTarget)) clearHighlightedPokemon();
+  });
+}
+
+function renderTeamManagement() {
+  if (!elements.teamSelector || !elements.teamNameInput) return;
+  const slots = getSavedTeamSlots();
+  const activeIndex = getActiveTeamIndex();
+  elements.teamSelector.innerHTML = slots.map((slot, index) => (
+    `<button type="button" class="team-selector-tab${index === activeIndex ? ' active' : ''}" aria-pressed="${index === activeIndex}" data-team-index="${index}">${escapeHtml(slot.name)}</button>`
+  )).join('');
+  elements.teamNameInput.value = slots[activeIndex].name;
 }
 
 function renderTeamBuilder(options = {}) {
@@ -3575,26 +3886,118 @@ function renderTeamBuilder(options = {}) {
   const team = getActiveTeamKeys()
     .map((key) => pokemonByKey.get(key))
     .filter(Boolean);
+  if (!team.some((pokemon) => getPokemonKey(pokemon) === selectedTeamPokemonKey)) {
+    selectedTeamPokemonKey = team[0] ? getPokemonKey(team[0]) : '';
+  }
+  renderTeamManagement();
   elements.teamCount.textContent = `${team.length} / ${TEAM_SIZE} Pokémon${currentUsername ? ` · ${currentUsername}` : ' · Guest team'}`;
+  renderTeamPokemonTabs(team);
   renderTeamRoster(team);
+  renderTeamOverview(team);
   renderTeamAnalysis(team);
   if (options.renderOptions !== false) renderTeamPokemonOptions();
   else updateTeamPokemonOptions();
 }
 
+function renderTeamPokemonTabs(team) {
+  if (!elements.teamPokemonTabs) return;
+  elements.teamPokemonTabs.innerHTML = team.length
+    ? team.map((pokemon) => {
+      const key = getPokemonKey(pokemon);
+      const active = key === selectedTeamPokemonKey;
+      const sprite = `sprites/${getPokemonSpriteBase(pokemon)}.png`;
+      return `<button type="button" class="team-pokemon-tab${active ? ' active' : ''}" role="tab" aria-selected="${active}" aria-controls="teamRoster" tabindex="${active ? '0' : '-1'}" data-team-pokemon-tab="${escapeHtml(key)}"><img src="${escapeHtml(sprite)}" alt="" loading="lazy" decoding="async" /><span>${escapeHtml(pokemon.displayName || pokemon.name)}</span></button>`;
+    }).join('')
+    : '<span class="team-pokemon-tabs-empty">Add Pokémon to build your team.</span>';
+}
+
+function renderTeamOverview(team) {
+  if (!elements.teamOverview) return;
+  elements.teamOverview.innerHTML = `
+    <div class="team-overview-heading"><h3>Full team</h3><span>${team.length} / ${TEAM_SIZE}</span></div>
+    <div class="team-overview-grid">${Array.from({ length: TEAM_SIZE }, (_, index) => {
+      const pokemon = team[index];
+      if (!pokemon) return '<div class="team-overview-member is-empty"><span>+</span><small>Open slot</small></div>';
+      const key = getPokemonKey(pokemon);
+      const teraType = getTeamTeraType(pokemon);
+      const selectedMoves = Array.isArray(getActiveTeamMoves()[key]) ? getActiveTeamMoves()[key] : [];
+      const moves = Array.from({ length: 4 }, (_, moveIndex) => movesLookup[selectedMoves[moveIndex]] || null);
+      const settings = getTeamStatSettings(key);
+      const stats = getTeamStatValues(pokemon, settings);
+      const abilityOptions = getTeamAbilityOptions(pokemon);
+      const ability = getTeamAbility(pokemon);
+      const abilityOption = abilityOptions.find((option) => option.ability === ability);
+      const statLabels = [['HP', 'HP'], ['Atk', 'ATK'], ['Def', 'DEF'], ['SpA', 'SpA'], ['SpD', 'SpD'], ['Spe', 'SPE']];
+      return `<div class="team-overview-member">
+        <img src="sprites/${escapeHtml(getPokemonSpriteBase(pokemon))}.png" alt="" loading="lazy" decoding="async" />
+        <div class="team-overview-member-copy">
+          <div class="team-overview-member-heading"><strong>${escapeHtml(pokemon.displayName || pokemon.name)}</strong><small>#${escapeHtml(pokemon.number)}</small><span class="team-overview-level">Lv. <b>${settings.level}</b></span></div>
+          <div class="team-overview-type-row"><div class="team-option-types">${pokemon.types.filter(Boolean).map(renderMoveTypePill).join('')}</div><span class="team-overview-nature">${escapeHtml(settings.nature)}</span></div>
+          <div class="team-overview-stats">${statLabels.map(([label, stat]) => `<span><small>${label}</small><strong>${stats[stat]}</strong></span>`).join('')}</div>
+          <div class="team-overview-battle-row">
+            <span class="team-overview-ability">${escapeHtml(ability || 'No ability')}</span>
+            <span class="team-overview-tera"><small>Tera</small>${renderCompactMoveTypePill(teraType)}</span>
+          </div>
+          <div class="team-overview-moves">${moves.map((move) => move
+            ? `<span>${renderCompactMoveTypePill(move.type)}<small>${escapeHtml(move.name)}</small></span>`
+            : '<span class="is-empty">—</span>').join('')}</div>
+        </div>
+      </div>`;
+    }).join('')}</div>`;
+}
+
 function renderTeamRoster(team) {
-  elements.teamRoster.innerHTML = Array.from({ length: TEAM_SIZE }, (_, index) => {
-    const pokemon = team[index];
-    if (!pokemon) {
-      return `<div class="team-slot team-slot-empty"><span class="team-slot-number">TEAM SLOT ${index + 1}</span><span class="team-slot-prompt">Choose a Pokémon from the list</span></div>`;
-    }
-    const key = getPokemonKey(pokemon);
-    const forms = pokemon.groupForms || [pokemon];
-    const formSwitcher = forms.length > 1
-      ? `<div class="team-form-control"><span class="team-form-label">Form</span><div class="team-form-picker"><button type="button" class="team-form-trigger" data-team-form-toggle aria-haspopup="listbox" aria-expanded="false"><span>${escapeHtml(pokemon.name)}</span><span class="team-form-chevron" aria-hidden="true"></span></button><div class="team-form-menu" role="listbox" aria-label="Choose a form for ${escapeHtml(pokemon.displayName || pokemon.name)}" hidden>${forms.map((form) => `<button type="button" role="option" aria-selected="${getPokemonKey(form) === key}" class="team-form-option${getPokemonKey(form) === key ? ' selected' : ''}" data-team-form-index="${index}" data-team-form-key="${escapeHtml(getPokemonKey(form))}"><span>${escapeHtml(form.name)}</span>${getPokemonKey(form) === key ? '<span class="team-form-check" aria-hidden="true">✓</span>' : ''}</button>`).join('')}</div></div></div>`
-      : '';
-    return `<article class="team-slot"><div class="team-slot-heading"><span class="team-slot-number">TEAM SLOT ${index + 1}</span><div><button type="button" class="team-slot-link" data-team-view="${escapeHtml(key)}">View details</button><button type="button" class="team-slot-remove" data-team-remove="${index}" aria-label="Remove ${escapeHtml(pokemon.displayName || pokemon.name)}">Remove</button></div></div><div class="team-slot-name-row"><h3>${escapeHtml(pokemon.displayName || pokemon.name)}</h3><span class="team-slot-dex-number">#${escapeHtml(pokemon.number)}</span><span class="team-stat-level">Lv. ${getTeamStatSettings(key).level}</span></div><div class="team-slot-meta-row"><div class="team-option-types">${pokemon.types.filter(Boolean).map(renderMoveTypePill).join('')}</div>${formSwitcher}</div>${renderTeamStatValues(pokemon)}${renderTeamMovePlanner(pokemon)}</article>`;
-  }).join('');
+  if (!team.length) {
+    elements.teamRoster.innerHTML = '<div class="team-roster-empty"><span>Select a Pokémon to edit it</span></div>';
+    return;
+  }
+  const index = team.findIndex((pokemon) => getPokemonKey(pokemon) === selectedTeamPokemonKey);
+  const pokemon = team[index < 0 ? 0 : index];
+  const key = getPokemonKey(pokemon);
+  const forms = pokemon.groupForms || [pokemon];
+  const formSwitcher = forms.length > 1
+    ? `<div class="team-form-control"><span class="team-form-label">Form</span><div class="team-form-picker"><button type="button" class="team-form-trigger" data-team-form-toggle aria-haspopup="listbox" aria-expanded="false"><span>${escapeHtml(pokemon.name)}</span><span class="team-form-chevron" aria-hidden="true"></span></button><div class="team-form-menu" role="listbox" aria-label="Choose a form for ${escapeHtml(pokemon.displayName || pokemon.name)}" hidden>${forms.map((form) => `<button type="button" role="option" aria-selected="${getPokemonKey(form) === key}" class="team-form-option${getPokemonKey(form) === key ? ' selected' : ''}" data-team-form-index="${index}" data-team-form-key="${escapeHtml(getPokemonKey(form))}"><span>${escapeHtml(form.name)}</span>${getPokemonKey(form) === key ? '<span class="team-form-check" aria-hidden="true">✓</span>' : ''}</button>`).join('')}</div></div></div>`
+    : '';
+  const teraType = getTeamTeraType(pokemon);
+  const teraChoice = (type) => {
+    const selected = type === teraType;
+    const pill = renderCompactMoveTypePill(type);
+    return `<button type="button" role="option" aria-label="${escapeHtml(type)}" aria-selected="${selected}" class="team-form-option team-tera-option${selected ? ' selected' : ''}" data-team-pokemon-key="${escapeHtml(key)}" data-team-tera-option="${escapeHtml(type)}">${pill}${selected ? '<span class="team-form-check" aria-hidden="true">✓</span>' : ''}</button>`;
+  };
+  const teraOptions = [...TYPE_ORDER, 'Stellar'].map(teraChoice).join('');
+  elements.teamRoster.innerHTML = `
+    <article class="team-slot">
+      <div class="team-slot-heading">
+        <span class="team-slot-number">POKÉMON ${index + 1} OF ${team.length}</span>
+        <div>
+          <button type="button" class="team-slot-link" data-team-view="${escapeHtml(key)}">Pokédex</button>
+          <button type="button" class="team-slot-remove" data-team-remove="${index}" aria-label="Remove ${escapeHtml(pokemon.displayName || pokemon.name)}">Remove</button>
+        </div>
+      </div>
+      <div class="team-slot-name-row"><h3>${escapeHtml(pokemon.displayName || pokemon.name)}</h3><span class="team-slot-dex-number">#${escapeHtml(pokemon.number)}</span></div>
+      <div class="team-slot-meta-row">
+        <div class="team-option-types">${pokemon.types.filter(Boolean).map(renderMoveTypePill).join('')}</div>
+        ${formSwitcher}
+      </div>
+      <div class="team-editor-grid">
+        <div class="team-move-column">
+          <div class="team-move-controls">
+            ${renderTeamAbilityPicker(pokemon)}
+            <div class="team-tera-control">
+              <span class="team-form-label">Tera</span>
+              <div class="team-form-picker team-tera-picker">
+                <button type="button" class="team-form-trigger team-tera-trigger" data-team-tera-toggle aria-haspopup="listbox" aria-expanded="false" aria-label="Tera type for ${escapeHtml(pokemon.displayName || pokemon.name)}">
+                  <span class="team-tera-current">${renderCompactMoveTypePill(teraType)}</span><span class="team-form-chevron" aria-hidden="true"></span>
+                </button>
+                <div class="team-form-menu team-tera-menu" role="listbox" aria-label="Choose a Tera type for ${escapeHtml(pokemon.displayName || pokemon.name)}" hidden>${teraOptions}</div>
+              </div>
+            </div>
+          </div>
+          ${renderTeamMovePlanner(pokemon)}
+        </div>
+        ${renderTeamStatValues(pokemon)}
+      </div>
+    </article>`;
 }
 
 function renderTeamMovePlanner(pokemon) {
@@ -3823,6 +4226,16 @@ function renderMoveTypePill(type) {
   const color = TYPE_COLORS[safeType] || '#475569';
   const textColor = hexIsLight(color) ? '#07111a' : '#ffffff';
   return `<span class="move-type-pill" style="background:${color};color:${textColor}">${escapeHtml(safeType || 'Unknown')}</span>`;
+}
+
+function renderCompactMoveTypePill(type) {
+  const safeType = String(type || '').trim();
+  const color = TYPE_COLORS[safeType] || '#475569';
+  const textColor = hexIsLight(color) ? '#07111a' : '#ffffff';
+  const abbreviation = GRID_TYPE_ABBREVIATIONS[safeType] || (safeType === 'Stellar' ? 'STE' : safeType.slice(0, 3).toUpperCase());
+  const stellarClass = safeType === 'Stellar' ? ' is-stellar' : '';
+  const style = safeType === 'Stellar' ? '' : ` style="background:${color};color:${textColor}"`;
+  return `<span class="move-type-pill team-overview-move-type${stellarClass}" title="${escapeHtml(safeType || 'Unknown')}"${style}>${escapeHtml(abbreviation || 'UNK')}</span>`;
 }
 
 function renderMoveCategoryBadge(category) {
@@ -5434,7 +5847,9 @@ function bindContentTabs(container, group, onSelect) {
   const tabList = container.querySelector(`[data-content-tab-group="${group}"]`);
   if (!tabList) return;
   const tabs = [...tabList.querySelectorAll('[data-content-tab]')];
-  const panels = [...container.querySelectorAll('[data-content-panel]')];
+  const panels = tabs
+    .map((tab) => document.getElementById(tab.getAttribute('aria-controls')))
+    .filter((panel) => panel && container.contains(panel));
   const activateTab = (tab) => {
     const selectedKey = tab.dataset.contentTab;
     if (!selectedKey) return;
@@ -5970,15 +6385,15 @@ function renderMetaItem(label, value, rankingKey = '', metaType = '', metaExtra 
   return `<div${rankingAttributes}><strong>${label}</strong><p>${value || '—'}</p></div>`;
 }
 
-function renderAbilityBox(ability, hidden = false) {
-  const tooltipId = `ability-tooltip-${normalizePokemonName(ability).replace(/\s+/g, '-')}`;
+function renderAbilityBox(ability, hidden = false, idSuffix = '') {
+  const tooltipId = `ability-tooltip-${normalizePokemonName(ability).replace(/\s+/g, '-')}${idSuffix ? `-${escapeHtml(idSuffix)}` : ''}`;
   const descriptions = abilityDescriptionsLookup[normalizePokemonName(ability)] || [];
   const tooltipContent = descriptions.length
     ? descriptions.map(({ game, description }) => `<div class="ability-description-entry"><strong>${escapeHtml(game)}</strong><span>${escapeHtml(description)}</span></div>`).join('')
     : '<span class="ability-description-unavailable">No ability description available.</span>';
   return `
     <button type="button" class="ability-box${hidden ? ' hidden' : ''}" aria-describedby="${escapeHtml(tooltipId)}">
-      <span>${ability}</span>
+      <span>${escapeHtml(ability)}</span>
       ${hidden ? '<span class="ability-tag">Hidden</span>' : ''}
       <span class="ability-tooltip" id="${escapeHtml(tooltipId)}" role="tooltip">${tooltipContent}</span>
     </button>

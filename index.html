@@ -379,14 +379,29 @@
       <section class="panel panel-right">
         <section class="stats-card team-roster-card">
           <div class="section-header">
-            <div><h2>My Team</h2><span id="teamCount" class="small">0 / 6 Pokémon</span></div>
+            <div><h2><input id="teamNameInput" class="team-name-heading-input" type="text" maxlength="24" autocomplete="off" aria-label="Current team name" /></h2><span id="teamCount" class="small">0 / 6 Pokémon</span></div>
             <button id="clearTeamButton" type="button" class="filters-button">Clear team</button>
           </div>
-          <div id="teamRoster" class="team-roster"></div>
+          <div class="team-management">
+            <div id="teamSelector" class="team-selector" role="group" aria-label="Saved teams"></div>
+          </div>
         </section>
-        <section class="stats-card team-analysis-card">
-          <div class="section-header"><h2>Team Analysis</h2></div>
-          <div id="teamAnalysis" class="team-analysis"></div>
+        <div class="section-tabs team-builder-tabs" role="tablist" aria-label="Team Builder sections" data-content-tab-group="team-builder">
+          <button type="button" class="section-tab active" role="tab" aria-selected="true" aria-controls="team-builder-panel-roster" tabindex="0" data-content-tab="roster">Teams</button>
+          <button type="button" class="section-tab" role="tab" aria-selected="false" aria-controls="team-builder-panel-analysis" tabindex="-1" data-content-tab="analysis">Team Analysis</button>
+        </div>
+        <section id="team-builder-panel-roster" class="content-tab-panel active" role="tabpanel" data-content-panel="roster">
+          <section class="stats-card team-roster-card">
+            <div id="teamPokemonTabs" class="team-pokemon-tabs" role="tablist" aria-label="Pokémon in current team"></div>
+            <div id="teamRoster" class="team-roster"></div>
+            <section id="teamOverview" class="team-overview" aria-label="Complete team overview"></section>
+          </section>
+        </section>
+        <section id="team-builder-panel-analysis" class="content-tab-panel" role="tabpanel" data-content-panel="analysis" hidden>
+          <section class="stats-card team-analysis-card">
+            <div class="section-header"><h2>Team Analysis</h2></div>
+            <div id="teamAnalysis" class="team-analysis"></div>
+          </section>
         </section>
       </section>
     </main>
