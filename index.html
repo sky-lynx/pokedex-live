@@ -669,23 +669,25 @@
             </div>
           </section>
         </section>
-        <section class="profile-goal-section" aria-labelledby="profileGoalTitle">
+        <section class="profile-progress-section" aria-labelledby="profileProgressTitle">
           <div class="profile-section-heading">
             <div>
-              <h3 id="profileGoalTitle">Pokédex goal</h3>
+              <h3 id="profileProgressTitle">Pokédex progress</h3>
             </div>
           </div>
-          <div class="profile-goal-progress">
-            <div class="profile-goal-progress-heading"><span id="profileGoalLabel">0 / 100 caught</span><strong id="profileGoalPercent">0%</strong></div>
-            <div class="profile-goal-track"><div id="profileGoalFill" class="profile-goal-fill"></div></div>
+          <div class="profile-progress-bars">
+            <div class="profile-progress-heading"><span id="profileCaughtProgressLabel">0 / 1,025 caught</span><strong id="profileCaughtProgressPercent">0%</strong></div>
+            <div class="profile-progress-track"><div id="profileCaughtProgressFill" class="profile-progress-fill" role="progressbar" aria-label="Pokémon caught progress" aria-valuemin="0" aria-valuemax="1025" aria-valuenow="0"></div></div>
+            <div class="profile-progress-heading"><span id="profileBaseShinyProgressLabel">0 / 1,025 base-form shinies</span><strong id="profileBaseShinyProgressPercent">0%</strong></div>
+            <div class="profile-progress-track"><div id="profileBaseShinyProgressFill" class="profile-progress-fill profile-progress-fill-base-shiny" role="progressbar" aria-label="Base-form shiny Pokémon progress" aria-valuemin="0" aria-valuemax="1025" aria-valuenow="0"></div></div>
+            <div class="profile-progress-heading"><span id="profileShinyProgressLabel">0 / 1,496 shiny Pokémon</span><strong id="profileShinyProgressPercent">0%</strong></div>
+            <div class="profile-progress-track"><div id="profileShinyProgressFill" class="profile-progress-fill profile-progress-fill-shiny" role="progressbar" aria-label="Shiny Pokémon across all forms progress" aria-valuemin="0" aria-valuemax="1496" aria-valuenow="0"></div></div>
+            <div class="profile-progress-heading"><span id="profileFormsProgressLabel">0 / 1,496 all forms caught</span><strong id="profileFormsProgressPercent">0%</strong></div>
+            <div class="profile-progress-track"><div id="profileFormsProgressFill" class="profile-progress-fill profile-progress-fill-forms" role="progressbar" aria-label="All forms caught progress" aria-valuemin="0" aria-valuemax="1496" aria-valuenow="0"></div></div>
           </div>
-          <form id="profileGoalForm" class="profile-goal-form" novalidate>
-            <label for="profileGoalInput">Target</label>
-            <input id="profileGoalInput" type="number" min="1" step="1" required />
-            <button type="submit" class="collection-utility-button">Save goal</button>
+          <div class="profile-progress-actions">
             <button id="profileOpenCollection" type="button" class="collection-utility-button">View Collection</button>
-            <p id="profileGoalError" class="profile-goal-error" role="alert" hidden></p>
-          </form>
+          </div>
         </section>
         <p id="profileSaveStatus" class="profile-save-status" role="status" aria-live="polite" hidden></p>
       </section>

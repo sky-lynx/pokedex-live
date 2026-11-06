@@ -3286,7 +3286,7 @@ button, input {
 }
 
 .profile-records-section,
-.profile-goal-section {
+.profile-progress-section {
   min-width: 0;
   padding: 1rem;
   border: 1px solid rgba(148, 163, 184, 0.15);
@@ -3309,13 +3309,13 @@ button, input {
   margin-bottom: 0.65rem;
 }
 
-.profile-goal-progress {
+.profile-progress-bars {
   display: grid;
   gap: 0.45rem;
   margin-bottom: 0.8rem;
 }
 
-.profile-goal-progress-heading {
+.profile-progress-heading {
   display: flex;
   justify-content: space-between;
   gap: 0.6rem;
@@ -3323,18 +3323,18 @@ button, input {
   font-size: 0.82rem;
 }
 
-.profile-goal-progress-heading strong {
+.profile-progress-heading strong {
   color: var(--accent-strong);
 }
 
-.profile-goal-track {
+.profile-progress-track {
   height: 0.6rem;
   overflow: hidden;
   border-radius: 999px;
   background: rgba(148, 163, 184, 0.14);
 }
 
-.profile-goal-fill {
+.profile-progress-fill {
   width: 0;
   height: 100%;
   border-radius: inherit;
@@ -3342,42 +3342,21 @@ button, input {
   transition: width 0.25s ease;
 }
 
-.profile-goal-form {
+.profile-progress-fill-shiny {
+  background: linear-gradient(90deg, #a855f7, #f0abfc);
+}
+
+.profile-progress-fill-base-shiny {
+  background: linear-gradient(90deg, #0ea5e9, #67e8f9);
+}
+
+.profile-progress-fill-forms {
+  background: linear-gradient(90deg, #22c55e, #86efac);
+}
+
+.profile-progress-actions {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0.45rem;
-}
-
-.profile-goal-form label {
-  color: var(--text-muted);
-  font-size: 0.8rem;
-  font-weight: 700;
-}
-
-.profile-goal-form input {
-  width: 5.5rem;
-  min-height: 2.2rem;
-  padding: 0.35rem 0.5rem;
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 8px;
-  background: rgba(15, 23, 32, 0.9);
-  color: var(--text);
-}
-
-.profile-goal-error {
-  flex: 1 0 100%;
-  margin: 0;
-  padding: 0.45rem 0.65rem;
-  border: 1px solid rgba(248, 113, 113, 0.32);
-  border-radius: 9px;
-  background: rgba(153, 27, 27, 0.18);
-  color: #fecaca;
-  font-size: 0.78rem;
-}
-
-.profile-goal-error[hidden] {
-  display: none;
+  justify-content: flex-end;
 }
 
 .profile-data-tool-actions {

@@ -143,12 +143,18 @@ const elements = {
   profileAccountStatus: document.getElementById('profileAccountStatus'),
   profileSearch: document.getElementById('profileSearch'),
   profileRecords: document.getElementById('profileRecords'),
-  profileGoalForm: document.getElementById('profileGoalForm'),
-  profileGoalInput: document.getElementById('profileGoalInput'),
-  profileGoalError: document.getElementById('profileGoalError'),
-  profileGoalLabel: document.getElementById('profileGoalLabel'),
-  profileGoalPercent: document.getElementById('profileGoalPercent'),
-  profileGoalFill: document.getElementById('profileGoalFill'),
+  profileCaughtProgressLabel: document.getElementById('profileCaughtProgressLabel'),
+  profileCaughtProgressPercent: document.getElementById('profileCaughtProgressPercent'),
+  profileCaughtProgressFill: document.getElementById('profileCaughtProgressFill'),
+  profileShinyProgressLabel: document.getElementById('profileShinyProgressLabel'),
+  profileShinyProgressPercent: document.getElementById('profileShinyProgressPercent'),
+  profileShinyProgressFill: document.getElementById('profileShinyProgressFill'),
+  profileBaseShinyProgressLabel: document.getElementById('profileBaseShinyProgressLabel'),
+  profileBaseShinyProgressPercent: document.getElementById('profileBaseShinyProgressPercent'),
+  profileBaseShinyProgressFill: document.getElementById('profileBaseShinyProgressFill'),
+  profileFormsProgressLabel: document.getElementById('profileFormsProgressLabel'),
+  profileFormsProgressPercent: document.getElementById('profileFormsProgressPercent'),
+  profileFormsProgressFill: document.getElementById('profileFormsProgressFill'),
   profileClearFavorites: document.getElementById('profileClearFavorites'),
   profileClearNotes: document.getElementById('profileClearNotes'),
   profileSaveStatus: document.getElementById('profileSaveStatus'),
@@ -1639,10 +1645,7 @@ function getProfileBackupData(profile) {
     shiny: Object.fromEntries(Object.entries(shiny).filter(([, isShiny]) => isShiny)),
     teams: getSavedTeamSlots(),
     activeTeamIndex: getActiveTeamIndex(),
-    appearance: getProfileAppearance(profile),
-    caughtGoal: Number.isInteger(profile.caughtGoal) && profile.caughtGoal >= 1 && profile.caughtGoal <= getProfileGoalMaximum()
-      ? profile.caughtGoal
-      : 100
+    appearance: getProfileAppearance(profile)
   };
 }
 
@@ -1719,10 +1722,6 @@ function parseProfileBackup(raw) {
     || (appearance.reduceSpriteLoad !== undefined && typeof appearance.reduceSpriteLoad !== 'boolean')) {
     throw new Error('The appearance preferences in this backup are invalid.');
   }
-  const caughtGoal = data.caughtGoal == null ? 100 : data.caughtGoal;
-  if (!Number.isInteger(caughtGoal) || caughtGoal < 1 || caughtGoal > getProfileGoalMaximum()) {
-    throw new Error('The Pokédex goal in this backup is invalid.');
-  }
   return {
     favorites: [...new Set(data.favorites)],
     notes: { ...notes },
@@ -1735,8 +1734,7 @@ function parseProfileBackup(raw) {
       compactLists: appearance.compactLists,
       reduceMotion: appearance.reduceMotion === true,
       reduceSpriteLoad: appearance.reduceSpriteLoad === true
-    },
-    caughtGoal
+    }
   };
 }
 
@@ -1748,7 +1746,7 @@ async function importProfileBackup(event) {
     if (file.size > 5 * 1024 * 1024) throw new Error('The backup file is too large (maximum 5 MB).');
     const backup = parseProfileBackup(await file.text());
     if (!currentUsername) throw new Error('Log in before importing a profile backup.');
-    if (!window.confirm(`Replace saved favorites, notes, collection progress, teams, appearance, and Pokédex goal for ${currentUsername}? Your local password will not change.`)) {
+    if (!window.confirm(`Replace saved favorites, notes, collection progress, teams, and appearance for ${currentUsername}? Your local password will not change.`)) {
       return;
     }
     const profiles = getProfiles();
@@ -1763,7 +1761,6 @@ async function importProfileBackup(event) {
       teams: backup.teams,
       activeTeamIndex: backup.activeTeamIndex,
       appearance: backup.appearance,
-      caughtGoal: backup.caughtGoal,
       team: activeTeam.team,
       teamMoves: activeTeam.teamMoves,
       teamStats: activeTeam.teamStats,
@@ -1905,34 +1902,35 @@ function openProfileRecord(key) {
   }
 }
 
-function getProfileCaughtCount() {
+function updateProfileProgressDisplay() {
   const species = Object.values(groupsByDex)
     .map((group) => group.find(isPrimaryCollectionForm) || group[0])
     .filter(Boolean);
-  return species.filter((pokemon) => {
-    const status = getCollectionStatusFromData(pokemon, getCollectionData());
-    return status === 'caught';
-  }).length;
-}
-
-function getProfileGoalMaximum() {
-  return allPokemon.length || 1025;
-}
-
-function updateProfileGoalDisplay(profile) {
-  const maximum = getProfileGoalMaximum();
-  const goal = Number.isInteger(profile.caughtGoal) && profile.caughtGoal >= 1 && profile.caughtGoal <= maximum
-    ? profile.caughtGoal
-    : Math.min(100, maximum);
-  const caught = getProfileCaughtCount();
-  const percent = Math.min(100, Math.round((caught / goal) * 100));
-  if (elements.profileGoalInput) {
-    elements.profileGoalInput.max = String(maximum);
-    elements.profileGoalInput.value = String(goal);
-  }
-  if (elements.profileGoalLabel) elements.profileGoalLabel.textContent = `${caught.toLocaleString()} / ${goal.toLocaleString()} caught`;
-  if (elements.profileGoalPercent) elements.profileGoalPercent.textContent = `${percent}%`;
-  if (elements.profileGoalFill) elements.profileGoalFill.style.width = `${percent}%`;
+  const speciesMaximum = species.length;
+  const formsMaximum = allPokemon.length;
+  const collection = getCollectionData();
+  const shiny = getShinyCollectionData();
+  const caughtCount = species.filter((pokemon) =>
+    getCollectionStatusFromData(pokemon, collection) === 'caught'
+  ).length;
+  const shinyCount = allPokemon.filter((pokemon) => isPokemonShinyFromData(pokemon, shiny)).length;
+  const baseShinyCount = species.filter((pokemon) => isPokemonShinyFromData(pokemon, shiny)).length;
+  const allFormsCaught = allPokemon.filter((pokemon) =>
+    getCollectionStatusFromData(pokemon, collection) === 'caught'
+  ).length;
+  const setProgress = (label, percentLabel, fill, count, maximum, description) => {
+    const percent = maximum ? Math.min(100, Math.round((count / maximum) * 100)) : 0;
+    if (label) label.textContent = `${count.toLocaleString()} / ${maximum.toLocaleString()} ${description}`;
+    if (percentLabel) percentLabel.textContent = `${percent}%`;
+    if (!fill) return;
+    fill.style.width = `${percent}%`;
+    fill.setAttribute('aria-valuenow', String(count));
+    fill.setAttribute('aria-valuemax', String(maximum));
+  };
+  setProgress(elements.profileCaughtProgressLabel, elements.profileCaughtProgressPercent, elements.profileCaughtProgressFill, caughtCount, speciesMaximum, 'caught');
+  setProgress(elements.profileShinyProgressLabel, elements.profileShinyProgressPercent, elements.profileShinyProgressFill, shinyCount, formsMaximum, 'shiny Pokémon');
+  setProgress(elements.profileBaseShinyProgressLabel, elements.profileBaseShinyProgressPercent, elements.profileBaseShinyProgressFill, baseShinyCount, speciesMaximum, 'base-form shinies');
+  setProgress(elements.profileFormsProgressLabel, elements.profileFormsProgressPercent, elements.profileFormsProgressFill, allFormsCaught, formsMaximum, 'all forms caught');
 }
 
 function renderProfileDashboard() {
@@ -1961,7 +1959,7 @@ function renderProfileDashboard() {
     elements.profileDashboardDescription.textContent = `Signed in as ${currentUsername}. This profile and its saved data exist only in this browser.`;
   }
   if (elements.profileAccountUsername) elements.profileAccountUsername.value = currentUsername;
-  updateProfileGoalDisplay(profile);
+  updateProfileProgressDisplay();
   if (elements.profileClearFavorites) elements.profileClearFavorites.disabled = favorites.length === 0;
   if (elements.profileClearNotes) {
     elements.profileClearNotes.disabled = !Object.values(notes).some((note) => typeof note === 'string' && note.trim());
@@ -2078,12 +2076,6 @@ function bindProfileDashboard() {
       setProfileBackupStatus('Could not update saved items. Check browser storage availability.');
     }
   });
-  elements.profileGoalForm?.addEventListener('submit', saveProfileCaughtGoal);
-  elements.profileGoalInput?.addEventListener('input', () => {
-    if (!elements.profileGoalError) return;
-    elements.profileGoalError.textContent = '';
-    elements.profileGoalError.hidden = true;
-  });
   document.getElementById('profileOpenCollection')?.addEventListener('click', () => switchDexView('collection'));
   elements.profileClearFavorites?.addEventListener('click', () => clearProfileRecords('favorites'));
   elements.profileClearNotes?.addEventListener('click', () => clearProfileRecords('notes'));
@@ -2140,39 +2132,6 @@ function clearProfileRecords(type) {
   } catch (error) {
     console.error(`Could not clear profile ${type}.`, error);
     setProfileBackupStatus(`Could not clear ${label}. Check browser storage availability.`);
-  }
-}
-
-function saveProfileCaughtGoal(event) {
-  event.preventDefault();
-  const rawValue = elements.profileGoalInput?.value.trim() || '';
-  const value = Number(rawValue);
-  const maximum = getProfileGoalMaximum();
-  if (!rawValue || !Number.isInteger(value) || value < 1 || value > maximum) {
-    if (elements.profileGoalError) {
-      elements.profileGoalError.textContent = `Enter an integer from 1 to ${maximum.toLocaleString()}.`;
-      elements.profileGoalError.hidden = false;
-    }
-    elements.profileGoalInput?.focus();
-    return;
-  }
-  if (elements.profileGoalError) {
-    elements.profileGoalError.textContent = '';
-    elements.profileGoalError.hidden = true;
-  }
-  const profiles = getProfiles();
-  const profile = profiles[currentUsername];
-  if (!profile) {
-    setProfileBackupStatus('Could not save Pokédex goal: the active profile could not be found.');
-    return;
-  }
-  profile.caughtGoal = value;
-  try {
-    saveProfiles(profiles);
-    updateProfileGoalDisplay(profile);
-  } catch (error) {
-    console.error('Could not save Pokédex goal.', error);
-    setProfileBackupStatus('Could not save Pokédex goal. Check browser storage availability.');
   }
 }
 
@@ -3101,7 +3060,7 @@ function handleAuthSubmit(event) {
     }
     profiles[username] = {
       password, favorites: [], notes: {}, team: [], teams: [], activeTeamIndex: 0,
-      collection: {}, shiny: {}, caughtGoal: 100,
+      collection: {}, shiny: {},
       appearance: { theme: 'cyan', compactLists: false, reduceMotion: false }
     };
     saveProfiles(profiles);
