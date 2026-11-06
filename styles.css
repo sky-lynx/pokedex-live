@@ -3342,16 +3342,9 @@ button, input {
   transition: width 0.25s ease;
 }
 
-.profile-progress-fill-shiny {
-  background: linear-gradient(90deg, #a855f7, #f0abfc);
-}
-
+.profile-progress-fill-shiny,
 .profile-progress-fill-base-shiny {
-  background: linear-gradient(90deg, #0ea5e9, #67e8f9);
-}
-
-.profile-progress-fill-forms {
-  background: linear-gradient(90deg, #22c55e, #86efac);
+  background: linear-gradient(90deg, #d69e00, #fde047);
 }
 
 .profile-progress-actions {
