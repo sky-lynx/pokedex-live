@@ -111,7 +111,6 @@ const elements = {
   status: document.getElementById('status'),
   details: document.getElementById('details'),
   randomButton: document.getElementById('randomButton'),
-  floatingCollectionButton: document.getElementById('floatingCollectionButton'),
   collectionView: document.getElementById('collectionView'),
   collectionEntries: document.getElementById('collectionEntries'),
   collectionSearch: document.getElementById('collectionSearch'),
@@ -121,12 +120,6 @@ const elements = {
   collectionFormsFilter: document.getElementById('collectionFormsFilter'),
   collectionGenerations: document.getElementById('collectionGenerations'),
   collectionGenerationReset: document.getElementById('collectionGenerationReset'),
-  collectionVisibleCount: document.getElementById('collectionVisibleCount'),
-  collectionMarkCaught: document.getElementById('collectionMarkCaught'),
-  collectionMarkSeen: document.getElementById('collectionMarkSeen'),
-  collectionResetVisible: document.getElementById('collectionResetVisible'),
-  collectionMarkVisibleShiny: document.getElementById('collectionMarkVisibleShiny'),
-  collectionUnmarkVisibleShiny: document.getElementById('collectionUnmarkVisibleShiny'),
   collectionSyncVisibleForms: document.getElementById('collectionSyncVisibleForms'),
   collectionSelectVisible: document.getElementById('collectionSelectVisible'),
   collectionClearSelection: document.getElementById('collectionClearSelection'),
@@ -137,16 +130,38 @@ const elements = {
   collectionUnmarkSelectedShiny: document.getElementById('collectionUnmarkSelectedShiny'),
   collectionSelectedCount: document.getElementById('collectionSelectedCount'),
   collectionSaveStatus: document.getElementById('collectionSaveStatus'),
+  exportProfileBackup: document.getElementById('exportProfileBackup'),
+  importProfileBackup: document.getElementById('importProfileBackup'),
+  profileBackupFile: document.getElementById('profileBackupFile'),
+  profileDashboardDescription: document.getElementById('profileDashboardDescription'),
+  profileAccountForm: document.getElementById('profileAccountForm'),
+  profileAccountUsername: document.getElementById('profileAccountUsername'),
+  profileCurrentPassword: document.getElementById('profileCurrentPassword'),
+  profileNewPassword: document.getElementById('profileNewPassword'),
+  profileConfirmPassword: document.getElementById('profileConfirmPassword'),
+  deleteLocalProfile: document.getElementById('deleteLocalProfile'),
+  profileAccountStatus: document.getElementById('profileAccountStatus'),
+  profileSearch: document.getElementById('profileSearch'),
+  profileRecords: document.getElementById('profileRecords'),
+  profileGoalForm: document.getElementById('profileGoalForm'),
+  profileGoalInput: document.getElementById('profileGoalInput'),
+  profileGoalError: document.getElementById('profileGoalError'),
+  profileGoalLabel: document.getElementById('profileGoalLabel'),
+  profileGoalPercent: document.getElementById('profileGoalPercent'),
+  profileGoalFill: document.getElementById('profileGoalFill'),
+  profileClearFavorites: document.getElementById('profileClearFavorites'),
+  profileClearNotes: document.getElementById('profileClearNotes'),
+  profileSaveStatus: document.getElementById('profileSaveStatus'),
   collectionConfirmModal: document.getElementById('collectionConfirmModal'),
   collectionConfirmMessage: document.getElementById('collectionConfirmMessage'),
   collectionConfirmCancel: document.getElementById('collectionConfirmCancel'),
   collectionConfirmApply: document.getElementById('collectionConfirmApply'),
-  profileButton: document.getElementById('profileButton'),
+  profileLogoutButton: document.getElementById('profileLogoutButton'),
+  profileDashboard: document.querySelector('.profile-dashboard'),
   sidebarToggleButton: document.getElementById('sidebarToggleButton'),
   floatingActions: document.getElementById('floatingActions'),
   floatingRandomButton: document.getElementById('floatingRandomButton'),
   floatingSidebarButton: document.getElementById('floatingSidebarButton'),
-  floatingProfileButton: document.getElementById('floatingProfileButton'),
   moveSearchInput: document.getElementById('moveSearchInput'),
   moveList: document.getElementById('moveList'),
   moveListCount: document.getElementById('moveListCount'),
@@ -199,6 +214,7 @@ let pokemonSpriteRequestToken = 0;
 let pokemonGridSnapshot = null;
 let pokemonGridElement = null;
 let pokemonGridRenderIndex = 0;
+let pokemonSpriteListRefreshPending = false;
 let pokemonGridRenderToken = 0;
 let pokemonGridViewEnabled = false;
 let selectedDex = 'pokemon';
@@ -279,6 +295,14 @@ let collectionSortOrder = 'dex';
 let collectionShinyOnly = false;
 let collectionGenerationFilter = 'all';
 let collectionShowAllForms = false;
+let profileRecordsFilter = 'all';
+const PROFILE_THEMES = {
+  cyan: { accent: '#38bdf8', strong: '#22d3ee', rgb: '56, 189, 248' },
+  violet: { accent: '#a78bfa', strong: '#c084fc', rgb: '167, 139, 250' },
+  emerald: { accent: '#34d399', strong: '#2dd4bf', rgb: '52, 211, 153' },
+  rose: { accent: '#fb7185', strong: '#f472b6', rgb: '251, 113, 133' },
+  amber: { accent: '#d97706', strong: '#b45309', rgb: '217, 119, 6' }
+};
 const selectedCollectionEntries = new Set();
 let pendingCollectionBulkUpdate = null;
 let collectionConfirmReturnFocus = null;
@@ -309,8 +333,10 @@ window.addEventListener('DOMContentLoaded', () => {
 });
 
 async function initialize() {
+  applyProfileAppearance();
   bindProfileControls();
   bindCollectionControls();
+  bindProfileDashboard();
   bindSidebarToggle();
   bindFloatingActions();
   bindPokemonGridPicker();
@@ -354,6 +380,7 @@ async function initialize() {
     renderPokemonComparison();
     elements.status.textContent = `Loaded ${allPokemon.length} Pokémon.`;
     refreshCollectionUI();
+    if (selectedDex === 'profile') renderProfileDashboard();
     pokemonDataLoaded = true;
   } catch (error) {
     console.error(error);
@@ -826,6 +853,7 @@ function loadMoveDexData() {
     initializeDexView('move');
     if (selectedDex === 'team') renderTeamBuilder({ renderOptions: false });
     if (selectedDex === 'compare') renderPokemonComparison();
+    if (selectedDex === 'profile') renderProfileDashboard();
   }).catch((error) => {
     moveDexDataPromise = null;
     moveDataLoadFailed = true;
@@ -854,9 +882,7 @@ function loadMoveDescriptions() {
 
 function bindFloatingActions() {
   elements.floatingRandomButton?.addEventListener('click', () => elements.randomButton?.click());
-  elements.floatingCollectionButton?.addEventListener('click', () => switchDexView('collection'));
   elements.floatingSidebarButton?.addEventListener('click', () => elements.sidebarToggleButton?.click());
-  elements.floatingProfileButton?.addEventListener('click', () => elements.profileButton?.click());
 
   const heroButtons = document.querySelector('.hero-buttons');
   if (!heroButtons || !elements.floatingActions || !('IntersectionObserver' in window)) return;
@@ -890,6 +916,7 @@ function bindDexSwitcher() {
   const pokemonCompareTab = document.getElementById('pokemonCompareTab');
   const damageCalculatorTab = document.getElementById('damageCalculatorTab');
   const collectionTab = document.getElementById('collectionTab');
+  const profileTab = document.getElementById('profileTab');
   pokedexTab.addEventListener('click', () => switchDexView('pokemon'));
   movedexTab.addEventListener('click', () => switchDexView('move'));
   abilitydexTab.addEventListener('click', () => switchDexView('ability'));
@@ -897,6 +924,7 @@ function bindDexSwitcher() {
   pokemonCompareTab.addEventListener('click', () => switchDexView('compare'));
   damageCalculatorTab.addEventListener('click', () => switchDexView('calculator'));
   collectionTab.addEventListener('click', () => switchDexView('collection'));
+  profileTab.addEventListener('click', () => switchDexView('profile'));
   document.getElementById('damagePokemonSearch').addEventListener('input', renderDamagePokemonList);
   document.getElementById('damagePokemonList').addEventListener('click', (event) => {
     const option = event.target.closest('[data-damage-pokemon]');
@@ -1096,7 +1124,7 @@ function bindDexSwitcher() {
 }
 
 function switchDexView(dex) {
-  if (dex === 'collection' && !currentUsername) {
+  if ((dex === 'collection' || dex === 'profile') && !currentUsername) {
     openAuthModal('login');
     return;
   }
@@ -1107,7 +1135,8 @@ function switchDexView(dex) {
     team: document.getElementById('teamBuilderView'),
     compare: elements.pokemonCompareView,
     calculator: document.getElementById('damageCalculatorView'),
-    collection: elements.collectionView
+    collection: elements.collectionView,
+    profile: document.getElementById('profileView')
   };
   const tabs = {
     pokemon: document.getElementById('pokedexTab'),
@@ -1116,7 +1145,8 @@ function switchDexView(dex) {
     team: document.getElementById('teamBuilderTab'),
     compare: document.getElementById('pokemonCompareTab'),
     calculator: document.getElementById('damageCalculatorTab'),
-    collection: document.getElementById('collectionTab')
+    collection: document.getElementById('collectionTab'),
+    profile: document.getElementById('profileTab')
   };
   selectedDex = dex;
   if (pokemonGridViewEnabled && dex !== 'pokemon') pokemonGridRenderToken += 1;
@@ -1125,10 +1155,10 @@ function switchDexView(dex) {
     tabs[key].classList.toggle('active', key === dex);
     tabs[key].setAttribute('aria-selected', String(key === dex));
   });
-  document.querySelector('.dex-switcher').style.setProperty(
-    '--dex-active-index',
-    String(Object.keys(tabs).indexOf(dex))
-  );
+  const dexSwitcher = document.querySelector('.dex-switcher');
+  const activeIndex = Object.keys(tabs).indexOf(dex);
+  dexSwitcher.style.setProperty('--dex-active-x', `${(activeIndex % 4) * 100}%`);
+  dexSwitcher.style.setProperty('--dex-active-y', `${Math.floor(activeIndex / 4) * 100}%`);
   const dexTitles = {
     pokemon: ['PokéDex Live', 'PokéDex Live'],
     move: ['PokéDex Live', 'MoveDex Live'],
@@ -1136,7 +1166,8 @@ function switchDexView(dex) {
     team: ['PokéDex Live', 'Team Builder'],
     compare: ['PokéDex Live', 'Compare Pokémon'],
     calculator: ['PokéDex Live', 'Damage Calculator'],
-    collection: ['PokéDex Live', 'Collection']
+    collection: ['PokéDex Live', 'Collection'],
+    profile: ['PokéDex Live', 'My Profile']
   };
   document.getElementById('heroEyebrow').textContent = dexTitles[dex][0];
   document.getElementById('heroTitle').textContent = dexTitles[dex][1];
@@ -1147,21 +1178,32 @@ function switchDexView(dex) {
     team: 'Random Pokémon',
     compare: 'Random Pokémon',
     calculator: 'Random Pokémon',
-    collection: 'Collection'
+    collection: 'Collection',
+    profile: 'My Profile'
   };
   elements.randomButton.textContent = randomLabels[dex];
   elements.floatingRandomButton.textContent = randomLabels[dex];
-  const showRandom = dex !== 'team' && dex !== 'compare' && dex !== 'calculator' && dex !== 'collection';
+  const showRandom = dex !== 'team' && dex !== 'compare' && dex !== 'calculator' && dex !== 'collection' && dex !== 'profile';
   elements.randomButton.hidden = !showRandom;
   elements.floatingRandomButton.hidden = !showRandom;
-  const showSidebarToggle = dex !== 'compare' && dex !== 'calculator' && dex !== 'collection';
+  const showSidebarToggle = dex !== 'compare' && dex !== 'calculator' && dex !== 'collection' && dex !== 'profile';
   elements.sidebarToggleButton.hidden = !showSidebarToggle;
   elements.floatingSidebarButton.hidden = !showSidebarToggle;
   if (dex === 'pokemon' && pokemonGridViewEnabled) renderPokemonGridPicker(filteredPokemon);
   initializeDexView(dex);
+  if (dex === 'pokemon' && pokemonSpriteListRefreshPending) {
+    pokemonSpriteListRefreshPending = false;
+    renderList(filteredPokemon);
+  }
 }
 
 function initializeDexView(dex) {
+  if (dex === 'profile') {
+    renderProfileDashboard();
+    if (!moveDataLoaded) loadMoveDexData();
+    if (!abilityDataLoaded) loadSupportingData();
+    return;
+  }
   if (dex === 'collection') {
     renderCollectionProgress(true);
     return;
@@ -1535,7 +1577,7 @@ function navigateToPokemon(number, name) {
   switchDexView('pokemon');
   resetFilters();
   selectPokemon(pokemon);
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  window.scrollTo({ top: 0, behavior: getMotionScrollBehavior() });
 }
 
 function navigateToMove(moveId) {
@@ -1550,7 +1592,11 @@ function navigateToMove(moveId) {
   updateMoveFilterButtons();
   applyMoveFilters();
   selectMove(move);
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  window.scrollTo({ top: 0, behavior: getMotionScrollBehavior() });
+}
+
+function getMotionScrollBehavior() {
+  return document.body.classList.contains('reduce-motion') ? 'auto' : 'smooth';
 }
 
 function getProfiles() {
@@ -1564,6 +1610,667 @@ function getProfiles() {
 
 function saveProfiles(profiles) {
   localStorage.setItem(PROFILE_STORAGE_KEY, JSON.stringify(profiles));
+}
+
+function isProfileBackupRecord(value) {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function getProfileBackupData(profile) {
+  const favorites = profile.favorites ?? [];
+  if (!Array.isArray(favorites) || !favorites.every((key) => typeof key === 'string')) {
+    throw new Error('The saved favorites are invalid.');
+  }
+  const validateMap = (value, label, isValid) => {
+    if (!isProfileBackupRecord(value) || !Object.values(value).every(isValid)) {
+      throw new Error(`The saved ${label} are invalid.`);
+    }
+    return value;
+  };
+  const notes = profile.notes == null ? {} : validateMap(profile.notes, 'notes', (note) => typeof note === 'string' && note.length <= 500);
+  const collection = profile.collection == null ? {} : validateMap(profile.collection, 'collection statuses', (status) => (
+    ['seen', 'caught', 'registered'].includes(status)
+  ));
+  const shiny = profile.shiny == null ? {} : validateMap(profile.shiny, 'shiny statuses', (value) => typeof value === 'boolean');
+  return {
+    favorites: [...new Set(favorites)],
+    notes: { ...notes },
+    collection: { ...collection },
+    shiny: Object.fromEntries(Object.entries(shiny).filter(([, isShiny]) => isShiny)),
+    teams: getSavedTeamSlots(),
+    activeTeamIndex: getActiveTeamIndex(),
+    appearance: getProfileAppearance(profile),
+    caughtGoal: Number.isInteger(profile.caughtGoal) && profile.caughtGoal >= 1 && profile.caughtGoal <= getProfileGoalMaximum()
+      ? profile.caughtGoal
+      : 100
+  };
+}
+
+function exportProfileBackup() {
+  if (!currentUsername) return;
+  const profile = getCurrentProfile();
+  if (!profile) {
+    setProfileBackupStatus('Could not export profile backup: the active profile could not be found.');
+    return;
+  }
+  try {
+    const backup = {
+      format: 'pokedex-live-profile',
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      data: getProfileBackupData(profile)
+    };
+    const file = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(file);
+    const link = document.createElement('a');
+    const safeUsername = currentUsername.replace(/[^a-z0-9_-]+/gi, '-');
+    link.href = url;
+    link.download = `pokedex-profile-${safeUsername}.json`;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    clearProfileBackupStatus();
+  } catch (error) {
+    console.error('Could not export profile backup.', error);
+    setProfileBackupStatus('Could not export profile backup. Check browser download permissions.');
+  }
+}
+
+function parseProfileBackup(raw) {
+  const backup = JSON.parse(raw);
+  if (!isProfileBackupRecord(backup) || backup.format !== 'pokedex-live-profile' || backup.version !== 1) {
+    throw new Error('This file is not a supported PokéDex Live profile backup.');
+  }
+  const data = backup.data;
+  if (!isProfileBackupRecord(data)) throw new Error('The profile backup is missing its data.');
+  if (!Array.isArray(data.favorites) || !data.favorites.every((key) => typeof key === 'string')) {
+    throw new Error('The favorites in this backup are invalid.');
+  }
+  const validateStringMap = (value, label) => {
+    if (!isProfileBackupRecord(value) || !Object.values(value).every((item) => typeof item === 'string')) {
+      throw new Error(`The ${label} in this backup are invalid.`);
+    }
+    return value;
+  };
+  const collection = validateStringMap(data.collection, 'collection statuses');
+  if (!Object.values(collection).every((status) => ['seen', 'caught', 'registered'].includes(status))) {
+    throw new Error('The collection statuses in this backup are invalid.');
+  }
+  if (!isProfileBackupRecord(data.shiny) || !Object.values(data.shiny).every((value) => typeof value === 'boolean')) {
+    throw new Error('The shiny statuses in this backup are invalid.');
+  }
+  if (!Array.isArray(data.teams) || data.teams.length < 1 || data.teams.length > TEAM_SLOT_COUNT
+    || !data.teams.every(isProfileBackupRecord)) {
+    throw new Error('The saved teams in this backup are invalid.');
+  }
+  if (!Number.isInteger(data.activeTeamIndex) || data.activeTeamIndex < 0 || data.activeTeamIndex >= TEAM_SLOT_COUNT) {
+    throw new Error('The active team in this backup is invalid.');
+  }
+  const notes = validateStringMap(data.notes, 'personal notes');
+  if (!Object.values(notes).every((note) => note.length <= 500)) {
+    throw new Error('Personal notes in this backup must be 500 characters or fewer.');
+  }
+  const appearance = data.appearance == null
+    ? { theme: 'cyan', compactLists: false, reduceMotion: false, reduceSpriteLoad: false }
+    : data.appearance;
+  if (!isProfileBackupRecord(appearance)
+    || !Object.prototype.hasOwnProperty.call(PROFILE_THEMES, appearance.theme)
+    || typeof appearance.compactLists !== 'boolean'
+    || (appearance.reduceMotion !== undefined && typeof appearance.reduceMotion !== 'boolean')
+    || (appearance.reduceSpriteLoad !== undefined && typeof appearance.reduceSpriteLoad !== 'boolean')) {
+    throw new Error('The appearance preferences in this backup are invalid.');
+  }
+  const caughtGoal = data.caughtGoal == null ? 100 : data.caughtGoal;
+  if (!Number.isInteger(caughtGoal) || caughtGoal < 1 || caughtGoal > getProfileGoalMaximum()) {
+    throw new Error('The Pokédex goal in this backup is invalid.');
+  }
+  return {
+    favorites: [...new Set(data.favorites)],
+    notes: { ...notes },
+    collection: { ...collection },
+    shiny: Object.fromEntries(Object.entries(data.shiny).filter(([, isShiny]) => isShiny)),
+    teams: normalizeTeamSlots(data.teams),
+    activeTeamIndex: data.activeTeamIndex,
+    appearance: {
+      theme: appearance.theme,
+      compactLists: appearance.compactLists,
+      reduceMotion: appearance.reduceMotion === true,
+      reduceSpriteLoad: appearance.reduceSpriteLoad === true
+    },
+    caughtGoal
+  };
+}
+
+async function importProfileBackup(event) {
+  const input = event.currentTarget;
+  const file = input.files?.[0];
+  if (!file) return;
+  try {
+    if (file.size > 5 * 1024 * 1024) throw new Error('The backup file is too large (maximum 5 MB).');
+    const backup = parseProfileBackup(await file.text());
+    if (!currentUsername) throw new Error('Log in before importing a profile backup.');
+    if (!window.confirm(`Replace saved favorites, notes, collection progress, teams, appearance, and Pokédex goal for ${currentUsername}? Your local password will not change.`)) {
+      return;
+    }
+    const profiles = getProfiles();
+    const profile = profiles[currentUsername];
+    if (!profile) throw new Error('The active local profile could not be found.');
+    const activeTeam = backup.teams[backup.activeTeamIndex];
+    Object.assign(profile, {
+      favorites: backup.favorites,
+      notes: backup.notes,
+      collection: backup.collection,
+      shiny: backup.shiny,
+      teams: backup.teams,
+      activeTeamIndex: backup.activeTeamIndex,
+      appearance: backup.appearance,
+      caughtGoal: backup.caughtGoal,
+      team: activeTeam.team,
+      teamMoves: activeTeam.teamMoves,
+      teamStats: activeTeam.teamStats,
+      teamAbilities: activeTeam.teamAbilities,
+      teamTeraTypes: activeTeam.teamTeraTypes
+    });
+    saveProfiles(profiles);
+    applyProfileAppearance(backup.appearance);
+    applyFilter();
+    applyMoveFilters();
+    applyAbilityFilters();
+    if (selectedPokemon) refreshPersonalTools(selectedPokemon);
+    if (selectedMove) refreshMovePersonalTools(selectedMove);
+    if (selectedAbility) refreshAbilityPersonalTools(selectedAbility);
+    if (selectedDex === 'team') renderTeamBuilder();
+    refreshCollectionUI();
+    if (selectedDex === 'profile') renderProfileDashboard();
+    setProfileBackupStatus('Profile backup imported successfully.');
+  } catch (error) {
+    console.error('Could not import profile backup.', error);
+    setProfileBackupStatus(`Could not import profile backup: ${error.message}`);
+  } finally {
+    input.value = '';
+  }
+}
+
+function setProfileStatus(element, message) {
+  if (!element) return;
+  element.textContent = message;
+  element.hidden = false;
+}
+
+function setProfileBackupStatus(message) {
+  if (!elements.profileSaveStatus) return;
+  setProfileStatus(elements.profileSaveStatus, message);
+}
+
+function setProfileAccountStatus(message) {
+  setProfileStatus(elements.profileAccountStatus, message);
+}
+
+function clearProfileBackupStatus() {
+  if (!elements.profileSaveStatus) return;
+  elements.profileSaveStatus.textContent = '';
+  elements.profileSaveStatus.hidden = true;
+}
+
+function getProfileAppearance(profile = getCurrentProfile()) {
+  const appearance = profile?.appearance;
+  return {
+    theme: Object.prototype.hasOwnProperty.call(PROFILE_THEMES, appearance?.theme) ? appearance.theme : 'cyan',
+    compactLists: appearance?.compactLists === true,
+    reduceMotion: appearance?.reduceMotion === true,
+    reduceSpriteLoad: appearance?.reduceSpriteLoad === true
+  };
+}
+
+function applyProfileAppearance(appearance = getProfileAppearance()) {
+  const normalized = getProfileAppearance({ appearance });
+  const theme = PROFILE_THEMES[normalized.theme];
+  const root = document.documentElement;
+  const spriteLoadChanged = document.body.classList.contains('reduce-sprite-load') !== normalized.reduceSpriteLoad;
+  root.style.setProperty('--accent', theme.accent);
+  root.style.setProperty('--accent-strong', theme.strong);
+  root.style.setProperty('--accent-rgb', theme.rgb);
+  root.classList.toggle('reduce-motion', normalized.reduceMotion);
+  document.body.classList.toggle('compact-lists', normalized.compactLists);
+  document.body.classList.toggle('reduce-motion', normalized.reduceMotion);
+  document.body.classList.toggle('reduce-sprite-load', normalized.reduceSpriteLoad);
+  document.querySelectorAll('[data-profile-theme]').forEach((button) => {
+    const active = button.dataset.profileTheme === normalized.theme;
+    button.classList.toggle('active', active);
+    button.setAttribute('aria-pressed', String(active));
+  });
+  const compactToggle = document.getElementById('profileCompactLists');
+  if (compactToggle) compactToggle.checked = normalized.compactLists;
+  const reduceMotionToggle = document.getElementById('profileReduceMotion');
+  if (reduceMotionToggle) reduceMotionToggle.checked = normalized.reduceMotion;
+  const reduceSpriteLoadToggle = document.getElementById('profileReduceSpriteLoad');
+  if (reduceSpriteLoadToggle) reduceSpriteLoadToggle.checked = normalized.reduceSpriteLoad;
+  if (spriteLoadChanged && allPokemon.length) {
+    if (selectedDex === 'pokemon') renderList(filteredPokemon);
+    else pokemonSpriteListRefreshPending = true;
+    if (selectedDex === 'collection') renderCollectionProgress();
+  }
+}
+
+function updateProfileAppearance(changes) {
+  if (!currentUsername) return;
+  const profiles = getProfiles();
+  const profile = profiles[currentUsername];
+  if (!profile) {
+    setProfileBackupStatus('Could not save appearance: the active profile could not be found.');
+    return;
+  }
+  const appearance = { ...getProfileAppearance(profile), ...changes };
+  if (!Object.prototype.hasOwnProperty.call(PROFILE_THEMES, appearance.theme)
+    || typeof appearance.compactLists !== 'boolean'
+    || typeof appearance.reduceMotion !== 'boolean'
+    || typeof appearance.reduceSpriteLoad !== 'boolean') {
+    throw new Error('Invalid profile appearance setting.');
+  }
+  profile.appearance = appearance;
+  try {
+    saveProfiles(profiles);
+    applyProfileAppearance(appearance);
+  } catch (error) {
+    console.error('Could not save profile appearance.', error);
+    setProfileBackupStatus('Could not save appearance. Check browser storage availability.');
+  }
+}
+
+function getProfileRecord(key) {
+  if (typeof key !== 'string') return null;
+  if (key.startsWith('move|')) {
+    const item = movesLookup[key.slice('move|'.length)];
+    return item ? { kind: 'move', item, name: item.name } : null;
+  }
+  if (key.startsWith('ability|')) {
+    if (!allAbilities.length && abilityDataLoaded) allAbilities = buildAbilityDexEntries(abilitySheetRows, allPokemon);
+    const item = allAbilities.find((ability) => getPersonalToolsKey(ability, 'ability') === key);
+    return item ? { kind: 'ability', item, name: item.name } : null;
+  }
+  const item = allPokemon.find((pokemon) => getPokemonKey(pokemon) === key);
+  return item ? { kind: 'pokemon', item, name: item.displayName || item.name } : null;
+}
+
+function openProfileRecord(key) {
+  const record = getProfileRecord(key);
+  if (!record) {
+    setProfileBackupStatus('Item data is not available yet. Try again after its Dex data loads.');
+    return;
+  }
+  if (record.kind === 'pokemon') navigateToPokemon(record.item.number, record.item.name);
+  else if (record.kind === 'move') navigateToMove(record.item.id);
+  else {
+    switchDexView('ability');
+    selectAbility(record.item);
+  }
+}
+
+function getProfileCaughtCount() {
+  const species = Object.values(groupsByDex)
+    .map((group) => group.find(isPrimaryCollectionForm) || group[0])
+    .filter(Boolean);
+  return species.filter((pokemon) => {
+    const status = getCollectionStatusFromData(pokemon, getCollectionData());
+    return status === 'caught';
+  }).length;
+}
+
+function getProfileGoalMaximum() {
+  return allPokemon.length || 1025;
+}
+
+function updateProfileGoalDisplay(profile) {
+  const maximum = getProfileGoalMaximum();
+  const goal = Number.isInteger(profile.caughtGoal) && profile.caughtGoal >= 1 && profile.caughtGoal <= maximum
+    ? profile.caughtGoal
+    : Math.min(100, maximum);
+  const caught = getProfileCaughtCount();
+  const percent = Math.min(100, Math.round((caught / goal) * 100));
+  if (elements.profileGoalInput) {
+    elements.profileGoalInput.max = String(maximum);
+    elements.profileGoalInput.value = String(goal);
+  }
+  if (elements.profileGoalLabel) elements.profileGoalLabel.textContent = `${caught.toLocaleString()} / ${goal.toLocaleString()} caught`;
+  if (elements.profileGoalPercent) elements.profileGoalPercent.textContent = `${percent}%`;
+  if (elements.profileGoalFill) elements.profileGoalFill.style.width = `${percent}%`;
+}
+
+function renderProfileDashboard() {
+  const isLoggedIn = Boolean(currentUsername);
+  if (elements.profileDashboard) elements.profileDashboard.hidden = !isLoggedIn;
+  if (!isLoggedIn || !elements.profileRecords) return;
+  const profile = getCurrentProfile();
+  if (!profile) {
+    setProfileBackupStatus('Could not load this local profile.');
+    return;
+  }
+  const favorites = Array.isArray(profile.favorites) ? profile.favorites : [];
+  const notes = isProfileBackupRecord(profile.notes) ? profile.notes : {};
+  const recordKeys = new Set([...favorites.filter((key) => typeof key === 'string'), ...Object.keys(notes)]);
+  document.querySelectorAll('[data-profile-filter-count]').forEach((count) => {
+    const filter = count.dataset.profileFilterCount;
+    const value = filter === 'favorites'
+      ? new Set(favorites.filter((key) => typeof key === 'string')).size
+      : filter === 'notes'
+        ? Object.values(notes).filter((note) => typeof note === 'string' && note.trim()).length
+        : recordKeys.size;
+    count.textContent = value.toLocaleString();
+  });
+
+  if (elements.profileDashboardDescription) {
+    elements.profileDashboardDescription.textContent = `Signed in as ${currentUsername}. This profile and its saved data exist only in this browser.`;
+  }
+  if (elements.profileAccountUsername) elements.profileAccountUsername.value = currentUsername;
+  updateProfileGoalDisplay(profile);
+  if (elements.profileClearFavorites) elements.profileClearFavorites.disabled = favorites.length === 0;
+  if (elements.profileClearNotes) {
+    elements.profileClearNotes.disabled = !Object.values(notes).some((note) => typeof note === 'string' && note.trim());
+  }
+  const query = String(elements.profileSearch?.value || '').trim().toLowerCase();
+  const records = [...recordKeys].map((key) => {
+    const record = getProfileRecord(key);
+    const note = typeof notes[key] === 'string' ? notes[key] : '';
+    const isFavorite = favorites.includes(key);
+    const searchText = `${record?.name || key} ${record?.kind || ''} ${note}`.toLowerCase();
+    return { key, record, note, isFavorite, searchText };
+  }).filter(({ searchText, isFavorite, note }) => (
+    (profileRecordsFilter === 'all'
+      || (profileRecordsFilter === 'favorites' && isFavorite)
+      || (profileRecordsFilter === 'notes' && Boolean(note.trim())))
+    && (!query || searchText.includes(query))
+  ))
+    .sort((left, right) => (left.record?.kind || '').localeCompare(right.record?.kind || '')
+      || (left.record?.name || left.key).localeCompare(right.record?.name || right.key));
+
+  if (elements.profileRecords) {
+    elements.profileRecords.innerHTML = records.length
+      ? records.map(({ key, record, note, isFavorite }) => {
+        const label = record?.name || key;
+        const kind = record?.kind === 'pokemon'
+          ? 'Pokémon'
+          : record?.kind || (key.startsWith('move|') ? 'move' : key.startsWith('ability|') ? 'ability' : 'Pokémon');
+        const openButton = record
+          ? `<button type="button" class="collection-utility-button" data-profile-open="${escapeHtml(key)}">Open</button>`
+          : '<span class="profile-record-unavailable">Item data unavailable</span>';
+        return `<article class="profile-record">
+          <div class="profile-record-copy">
+            <div class="profile-record-title"><span class="profile-record-kind">${escapeHtml(kind)}</span><strong>${escapeHtml(label)}</strong>${isFavorite ? '<span class="profile-record-favorite" aria-label="Favorite">★</span>' : ''}</div>
+            <label class="profile-note-editor">
+              <span class="visually-hidden">Personal note for ${escapeHtml(label)}</span>
+              <textarea rows="2" maxlength="500" data-profile-note-input placeholder="Add a personal note...">${escapeHtml(note)}</textarea>
+            </label>
+          </div>
+          <div class="profile-record-actions">
+            ${openButton}
+            <button type="button" class="collection-utility-button" data-profile-save-note="${escapeHtml(key)}">Save note</button>
+            ${isFavorite ? `<button type="button" class="collection-utility-button" data-profile-remove-favorite="${escapeHtml(key)}" aria-label="Remove ${escapeHtml(label)} from favorites">Unfavorite</button>` : ''}
+          </div>
+        </article>`;
+      }).join('')
+      : `<div class="profile-empty-message"><p>${query ? 'No saved items match your search.' : profileRecordsFilter === 'favorites' ? 'No favorites yet. Mark items as favorites from their details.' : profileRecordsFilter === 'notes' ? 'No notes yet. Add a personal note from any item’s details.' : 'No favorites or notes yet. Save items from the Pokédex, MoveDex, or AbilityDex.'}</p></div>`;
+  }
+
+}
+
+function bindProfileDashboard() {
+  elements.exportProfileBackup?.addEventListener('click', exportProfileBackup);
+  elements.importProfileBackup?.addEventListener('click', () => elements.profileBackupFile?.click());
+  elements.profileBackupFile?.addEventListener('change', importProfileBackup);
+  elements.profileSearch?.addEventListener('input', renderProfileDashboard);
+  document.querySelectorAll('[data-profile-theme]').forEach((button) => {
+    button.addEventListener('click', () => updateProfileAppearance({ theme: button.dataset.profileTheme }));
+  });
+  document.getElementById('profileCompactLists')?.addEventListener('change', (event) => {
+    updateProfileAppearance({ compactLists: event.currentTarget.checked });
+  });
+  document.getElementById('profileReduceMotion')?.addEventListener('change', (event) => {
+    updateProfileAppearance({ reduceMotion: event.currentTarget.checked });
+  });
+  document.getElementById('profileReduceSpriteLoad')?.addEventListener('change', (event) => {
+    updateProfileAppearance({ reduceSpriteLoad: event.currentTarget.checked });
+  });
+  document.getElementById('resetProfileAppearance')?.addEventListener('click', () => {
+    updateProfileAppearance({ theme: 'cyan', compactLists: false, reduceMotion: false, reduceSpriteLoad: false });
+  });
+  document.querySelectorAll('[data-profile-filter]').forEach((button) => {
+    button.addEventListener('click', () => {
+      profileRecordsFilter = button.dataset.profileFilter;
+      document.querySelectorAll('[data-profile-filter]').forEach((filterButton) => {
+        const active = filterButton === button;
+        filterButton.classList.toggle('active', active);
+        filterButton.setAttribute('aria-pressed', String(active));
+      });
+      renderProfileDashboard();
+    });
+  });
+  elements.profileAccountForm?.addEventListener('submit', updateLocalProfileAccount);
+  elements.deleteLocalProfile?.addEventListener('click', deleteCurrentLocalProfile);
+  elements.profileRecords?.addEventListener('click', (event) => {
+    const openButton = event.target.closest('[data-profile-open]');
+    if (openButton) {
+      openProfileRecord(openButton.dataset.profileOpen);
+      return;
+    }
+
+    const favoriteButton = event.target.closest('[data-profile-remove-favorite]');
+    const saveNoteButton = event.target.closest('[data-profile-save-note]');
+    if (saveNoteButton) {
+      saveProfileNote(saveNoteButton);
+      return;
+    }
+    if (!favoriteButton) return;
+    const key = favoriteButton.dataset.profileRemoveFavorite;
+    const profiles = getProfiles();
+    const profile = profiles[currentUsername];
+    if (!profile) {
+      setProfileBackupStatus('Could not update saved items: the active profile could not be found.');
+      return;
+    }
+    if (favoriteButton) profile.favorites = (profile.favorites || []).filter((favorite) => favorite !== key);
+    try {
+      saveProfiles(profiles);
+      applyFilter();
+      applyMoveFilters();
+      applyAbilityFilters();
+      renderProfileDashboard();
+    } catch (error) {
+      console.error('Could not update saved profile items.', error);
+      setProfileBackupStatus('Could not update saved items. Check browser storage availability.');
+    }
+  });
+  elements.profileGoalForm?.addEventListener('submit', saveProfileCaughtGoal);
+  elements.profileGoalInput?.addEventListener('input', () => {
+    if (!elements.profileGoalError) return;
+    elements.profileGoalError.textContent = '';
+    elements.profileGoalError.hidden = true;
+  });
+  document.getElementById('profileOpenCollection')?.addEventListener('click', () => switchDexView('collection'));
+  elements.profileClearFavorites?.addEventListener('click', () => clearProfileRecords('favorites'));
+  elements.profileClearNotes?.addEventListener('click', () => clearProfileRecords('notes'));
+}
+
+function saveProfileNote(button) {
+  const key = button.dataset.profileSaveNote;
+  const textarea = button.closest('.profile-record')?.querySelector('[data-profile-note-input]');
+  if (!key || !textarea || !currentUsername) return;
+  const profiles = getProfiles();
+  const profile = profiles[currentUsername];
+  if (!profile) {
+    setProfileBackupStatus('Could not save note: the active profile could not be found.');
+    return;
+  }
+  const note = textarea.value.trim();
+  if (!profile.notes || !isProfileBackupRecord(profile.notes)) profile.notes = {};
+  if (note) profile.notes[key] = note;
+  else delete profile.notes[key];
+  try {
+    saveProfiles(profiles);
+    applyFilter();
+    applyMoveFilters();
+    applyAbilityFilters();
+    renderProfileDashboard();
+  } catch (error) {
+    console.error('Could not save profile note.', error);
+    setProfileBackupStatus('Could not save note. Check browser storage availability.');
+  }
+}
+
+function clearProfileRecords(type) {
+  const profiles = getProfiles();
+  const profile = profiles[currentUsername];
+  if (!profile) {
+    setProfileBackupStatus('Could not clear saved items: the active profile could not be found.');
+    return;
+  }
+  const isFavorites = type === 'favorites';
+  const hasItems = isFavorites
+    ? Array.isArray(profile.favorites) && profile.favorites.length > 0
+    : profile.notes && Object.values(profile.notes).some((note) => typeof note === 'string' && note.trim());
+  if (!hasItems) return;
+  const label = isFavorites ? 'all favorites' : 'all personal notes';
+  if (!window.confirm(`Permanently remove ${label} from this local profile?`)) return;
+  if (isFavorites) profile.favorites = [];
+  else profile.notes = {};
+  try {
+    saveProfiles(profiles);
+    applyFilter();
+    applyMoveFilters();
+    applyAbilityFilters();
+    renderProfileDashboard();
+  } catch (error) {
+    console.error(`Could not clear profile ${type}.`, error);
+    setProfileBackupStatus(`Could not clear ${label}. Check browser storage availability.`);
+  }
+}
+
+function saveProfileCaughtGoal(event) {
+  event.preventDefault();
+  const rawValue = elements.profileGoalInput?.value.trim() || '';
+  const value = Number(rawValue);
+  const maximum = getProfileGoalMaximum();
+  if (!rawValue || !Number.isInteger(value) || value < 1 || value > maximum) {
+    if (elements.profileGoalError) {
+      elements.profileGoalError.textContent = `Enter an integer from 1 to ${maximum.toLocaleString()}.`;
+      elements.profileGoalError.hidden = false;
+    }
+    elements.profileGoalInput?.focus();
+    return;
+  }
+  if (elements.profileGoalError) {
+    elements.profileGoalError.textContent = '';
+    elements.profileGoalError.hidden = true;
+  }
+  const profiles = getProfiles();
+  const profile = profiles[currentUsername];
+  if (!profile) {
+    setProfileBackupStatus('Could not save Pokédex goal: the active profile could not be found.');
+    return;
+  }
+  profile.caughtGoal = value;
+  try {
+    saveProfiles(profiles);
+    updateProfileGoalDisplay(profile);
+  } catch (error) {
+    console.error('Could not save Pokédex goal.', error);
+    setProfileBackupStatus('Could not save Pokédex goal. Check browser storage availability.');
+  }
+}
+
+function updateLocalProfileAccount(event) {
+  event.preventDefault();
+  const username = String(elements.profileAccountUsername?.value || '').trim();
+  const currentPassword = String(elements.profileCurrentPassword?.value || '');
+  const newPassword = String(elements.profileNewPassword?.value || '');
+  const confirmPassword = String(elements.profileConfirmPassword?.value || '');
+  if (username.length < 3 || username.length > 24) {
+    setProfileAccountStatus('Username must be between 3 and 24 characters.');
+    elements.profileAccountUsername?.focus();
+    return;
+  }
+  if (newPassword && (newPassword.length < 4 || newPassword.length > 80)) {
+    setProfileAccountStatus('New password must be between 4 and 80 characters.');
+    elements.profileNewPassword?.focus();
+    return;
+  }
+  if (newPassword !== confirmPassword) {
+    setProfileAccountStatus('The new passwords do not match.');
+    elements.profileConfirmPassword?.focus();
+    return;
+  }
+
+  const profiles = getProfiles();
+  const profile = profiles[currentUsername];
+  if (!profile || profile.password !== currentPassword) {
+    setProfileAccountStatus('Your current password is incorrect.');
+    elements.profileCurrentPassword?.focus();
+    return;
+  }
+  if (username !== currentUsername && Object.prototype.hasOwnProperty.call(profiles, username)) {
+    setProfileAccountStatus('That username already exists on this browser.');
+    elements.profileAccountUsername?.focus();
+    return;
+  }
+  if (username === currentUsername && !newPassword) {
+    setProfileAccountStatus('There are no account changes to save.');
+    return;
+  }
+
+  const previousUsername = currentUsername;
+  if (newPassword) profile.password = newPassword;
+  if (username !== previousUsername) {
+    delete profiles[previousUsername];
+    profiles[username] = profile;
+  }
+  try {
+    saveProfiles(profiles);
+    if (username !== previousUsername) localStorage.setItem('pokedexCurrentUser', username);
+    currentUsername = username;
+    updateProfileButton();
+    elements.profileAccountForm?.reset();
+    if (elements.profileAccountUsername) elements.profileAccountUsername.value = currentUsername;
+    renderProfileDashboard();
+    setProfileAccountStatus('Local account updated.');
+  } catch (error) {
+    console.error('Could not update the local profile.', error);
+    setProfileAccountStatus('Could not update the local profile. Check browser storage availability.');
+  }
+}
+
+function deleteCurrentLocalProfile() {
+  const currentPassword = String(elements.profileCurrentPassword?.value || '');
+  const profiles = getProfiles();
+  const profile = profiles[currentUsername];
+  if (!profile || profile.password !== currentPassword) {
+    setProfileAccountStatus('Enter the current password to delete this profile.');
+    elements.profileCurrentPassword?.focus();
+    return;
+  }
+  if (!window.confirm(`Permanently delete the local profile "${currentUsername}" and all its saved data from this browser?`)) {
+    return;
+  }
+  try {
+    delete profiles[currentUsername];
+    saveProfiles(profiles);
+    localStorage.removeItem('pokedexCurrentUser');
+  } catch (error) {
+    console.error('Could not delete the local profile.', error);
+    setProfileAccountStatus('Could not delete the local profile. Check browser storage availability.');
+    return;
+  }
+
+  currentUsername = '';
+  updateProfileButton();
+  applyProfileAppearance({ theme: 'cyan', compactLists: false, reduceMotion: false });
+  applyFilter();
+  applyMoveFilters();
+  applyAbilityFilters();
+  if (selectedPokemon) refreshPersonalTools(selectedPokemon);
+  if (selectedMove) refreshMovePersonalTools(selectedMove);
+  if (selectedAbility) refreshAbilityPersonalTools(selectedAbility);
+  if (selectedDex === 'team') renderTeamBuilder();
+  refreshCollectionUI();
+  switchDexView('pokemon');
+  if (elements.status) elements.status.textContent = 'Local profile deleted.';
 }
 
 function getCurrentProfile() {
@@ -1762,6 +2469,7 @@ function renderCollectionEntries(species, totalSpecies) {
   entries.replaceChildren();
   const collection = getCollectionData();
   const shiny = getShinyCollectionData();
+  const reduceSpriteLoad = getProfileAppearance().reduceSpriteLoad;
   const token = collectionEntriesRenderToken;
   const batchSize = 60;
   let index = 0;
@@ -1775,7 +2483,7 @@ function renderCollectionEntries(species, totalSpecies) {
       const entryKey = getCollectionEntryKey(pokemon);
       const isShiny = isPokemonShinyFromData(pokemon, shiny);
       const name = pokemon.displayName || pokemon.name;
-      const sprite = `sprites/${getPokemonSpriteBase(pokemon)}.png`;
+      const sprite = reduceSpriteLoad ? '' : `sprites/${getPokemonSpriteBase(pokemon)}.png`;
       const typeBadges = (pokemon.types || [])
         .filter(Boolean)
         .map((type) => {
@@ -1786,22 +2494,24 @@ function renderCollectionEntries(species, totalSpecies) {
         .join('');
       const selected = selectedCollectionEntries.has(entryKey);
       return `
-        <div class="collection-entry${selected ? ' is-selected' : ''}">
+        <div class="collection-entry${selected ? ' is-selected' : ''}${reduceSpriteLoad ? ' no-sprite' : ''}">
           <label class="collection-entry-select" aria-label="Select ${escapeHtml(name)}">
             <input type="checkbox" data-collection-select="${escapeHtml(entryKey)}"${selected ? ' checked' : ''} />
           </label>
-          <button type="button" class="collection-entry-main" data-collection-pokemon="${escapeHtml(entryKey)}" aria-label="Select ${escapeHtml(name)}" aria-pressed="${selected}">
+          ${reduceSpriteLoad ? '' : `<button type="button" class="collection-entry-sprite-button" data-collection-pokemon="${escapeHtml(entryKey)}" aria-label="Select ${escapeHtml(name)}" aria-pressed="${selected}">
             <img class="collection-entry-sprite" src="${escapeHtml(sprite)}" alt="" loading="lazy" decoding="async" fetchpriority="low" />
-            <span class="collection-entry-details">
-              <span class="collection-entry-name"><span class="collection-entry-number">#${escapeHtml(pokemon.number)}</span>${escapeHtml(name)}<span class="collection-shiny-symbol${isShiny ? ' is-active' : ''}" aria-hidden="true">✦</span></span>
-              <span class="collection-entry-types">${typeBadges}</span>
-            </span>
+          </button>`}
+          <button type="button" class="collection-entry-main" data-collection-pokemon="${escapeHtml(entryKey)}" aria-label="Select ${escapeHtml(name)}" aria-pressed="${selected}">
+            <span class="collection-entry-name"><span class="collection-entry-number">#${escapeHtml(pokemon.number)}</span>${escapeHtml(name)}<span class="collection-shiny-symbol${isShiny ? ' is-active' : ''}" aria-hidden="true">✦</span></span>
           </button>
-          <div class="collection-entry-controls">
-            ${renderCollectionStatusButtons(entryKey, getCollectionStatusFromData(pokemon, collection), `Collection status for ${name}`, 'collection-entry-status')}
-            <button type="button" class="collection-shiny-button${isShiny ? ' active' : ''}" data-collection-shiny="${escapeHtml(entryKey)}" aria-pressed="${isShiny}" aria-label="Shiny ${escapeHtml(name)}">
-              Shiny
-            </button>
+          <div class="collection-entry-lower">
+            <span class="collection-entry-types">${typeBadges}</span>
+            <div class="collection-entry-controls">
+              ${renderCollectionStatusButtons(entryKey, getCollectionStatusFromData(pokemon, collection), `Collection status for ${name}`, 'collection-entry-status')}
+              <button type="button" class="collection-shiny-button collection-entry-shiny${isShiny ? ' active' : ''}" data-collection-shiny="${escapeHtml(entryKey)}" aria-pressed="${isShiny}" aria-label="Toggle shiny for ${escapeHtml(name)}">
+                <span aria-hidden="true">✦</span>
+              </button>
+            </div>
           </div>
         </div>`;
     }).join('');
@@ -1917,16 +2627,7 @@ function renderCollectionProgress(renderEntries = selectedDex === 'collection') 
   });
   renderCollectionGenerations(species, collection);
   const visibleSpecies = getVisibleCollectionSpecies(species, collection, shiny);
-  if (elements.collectionVisibleCount) {
-    elements.collectionVisibleCount.textContent = `Showing ${visibleSpecies.length.toLocaleString()} of ${species.length.toLocaleString()} Pokémon`;
-  }
   updateCollectionSelectionControls();
-  [elements.collectionMarkCaught, elements.collectionMarkSeen, elements.collectionResetVisible].forEach((button) => {
-    if (button) button.disabled = visibleSpecies.length === 0;
-  });
-  [elements.collectionMarkVisibleShiny, elements.collectionUnmarkVisibleShiny].forEach((button) => {
-    if (button) button.disabled = visibleSpecies.length === 0;
-  });
   if (elements.collectionSyncVisibleForms) {
     elements.collectionSyncVisibleForms.disabled = !visibleSpecies.some((pokemon) =>
       isPrimaryCollectionForm(pokemon) && (pokemon.groupForms?.length || 0) > 1
@@ -1934,11 +2635,6 @@ function renderCollectionProgress(renderEntries = selectedDex === 'collection') 
   }
   if (elements.collectionEntries && renderEntries) {
     renderCollectionEntries(visibleSpecies, species.length);
-  }
-  if (elements.floatingCollectionButton) {
-    elements.floatingCollectionButton.textContent = currentUsername && species.length
-      ? `Collection ${collectedPercentLabel}%`
-      : 'Collection';
   }
 }
 
@@ -1987,11 +2683,6 @@ function bindCollectionControls() {
     collectionGenerationFilter = 'all';
     renderCollectionProgress(true);
   });
-  elements.collectionMarkCaught?.addEventListener('click', (event) => requestVisibleCollectionStatus('caught', event.currentTarget));
-  elements.collectionMarkSeen?.addEventListener('click', (event) => requestVisibleCollectionStatus('seen', event.currentTarget));
-  elements.collectionResetVisible?.addEventListener('click', (event) => requestVisibleCollectionStatus('unseen', event.currentTarget));
-  elements.collectionMarkVisibleShiny?.addEventListener('click', (event) => requestVisibleShinyStatus(true, event.currentTarget));
-  elements.collectionUnmarkVisibleShiny?.addEventListener('click', (event) => requestVisibleShinyStatus(false, event.currentTarget));
   elements.collectionMarkSelectedCaught?.addEventListener('click', (event) => requestSelectedCollectionStatus('caught', event.currentTarget));
   elements.collectionMarkSelectedSeen?.addEventListener('click', (event) => requestSelectedCollectionStatus('seen', event.currentTarget));
   elements.collectionResetSelected?.addEventListener('click', (event) => requestSelectedCollectionStatus('unseen', event.currentTarget));
@@ -2020,8 +2711,9 @@ function bindCollectionControls() {
     if (checkbox.checked) selectedCollectionEntries.add(key);
     else selectedCollectionEntries.delete(key);
     checkbox.closest('.collection-entry')?.classList.toggle('is-selected', checkbox.checked);
-    const pokemonButton = checkbox.closest('.collection-entry')?.querySelector('[data-collection-pokemon]');
-    pokemonButton?.setAttribute('aria-pressed', String(checkbox.checked));
+    checkbox.closest('.collection-entry')?.querySelectorAll('[data-collection-pokemon]').forEach((button) => {
+      button.setAttribute('aria-pressed', String(checkbox.checked));
+    });
     updateCollectionSelectionControls();
   });
   elements.collectionConfirmModal?.addEventListener('keydown', handleCollectionConfirmationKeydown);
@@ -2030,12 +2722,6 @@ function bindCollectionControls() {
   document.addEventListener('click', dismissCollectionConfirmationOnOutsideClick);
   elements.collectionView?.addEventListener('click', handleCollectionDropdownClick);
   elements.details?.addEventListener('click', handleCollectionDropdownClick);
-}
-
-function requestVisibleCollectionStatus(status, trigger) {
-  const visibleSpecies = getVisibleCollectionSpecies();
-  if (!visibleSpecies.length) return;
-  requestCollectionBulkUpdate({ type: 'status', status, species: visibleSpecies }, trigger, visibleSpecies.length, `visible Pokémon as ${status}`);
 }
 
 function requestSelectedCollectionStatus(status, trigger) {
@@ -2048,12 +2734,6 @@ function requestSelectedShinyStatus(isShiny, trigger) {
   const selectedSpecies = getSelectedCollectionSpecies();
   if (!selectedSpecies.length) return;
   requestCollectionShinyStatus(isShiny, selectedSpecies, trigger, 'selected Pokémon');
-}
-
-function requestVisibleShinyStatus(isShiny, trigger) {
-  const visibleSpecies = getVisibleCollectionSpecies();
-  if (!visibleSpecies.length) return;
-  requestCollectionShinyStatus(isShiny, visibleSpecies, trigger, 'visible Pokémon');
 }
 
 function requestCollectionShinyStatus(isShiny, species, trigger, description) {
@@ -2254,7 +2934,9 @@ function handleCollectionDropdownClick(event) {
     entry?.classList.toggle('is-selected', isSelected);
     const checkbox = entry?.querySelector('[data-collection-select]');
     if (checkbox) checkbox.checked = isSelected;
-    collectionPokemonButton.setAttribute('aria-pressed', String(isSelected));
+    entry?.querySelectorAll('[data-collection-pokemon]').forEach((button) => {
+      button.setAttribute('aria-pressed', String(isSelected));
+    });
     updateCollectionSelectionControls();
     return;
   }
@@ -2333,32 +3015,12 @@ function getPokemonKey(pokemon) {
 }
 
 function updateProfileButton() {
-  if (!elements.profileButton) return;
-  const label = currentUsername ? `Log out (${currentUsername})` : 'Log in';
-  elements.profileButton.textContent = label;
-  if (elements.floatingProfileButton) elements.floatingProfileButton.textContent = label;
+  if (elements.profileDashboard) elements.profileDashboard.hidden = !currentUsername;
 }
 
 function bindProfileControls() {
   updateProfileButton();
-  elements.profileButton?.addEventListener('click', () => {
-    if (currentUsername) {
-      currentUsername = '';
-      localStorage.removeItem('pokedexCurrentUser');
-      if (selectedDex === 'collection') switchDexView('pokemon');
-      updateProfileButton();
-      applyFilter();
-      applyMoveFilters();
-      applyAbilityFilters();
-      if (selectedPokemon) refreshPersonalTools(selectedPokemon);
-      if (selectedMove) refreshMovePersonalTools(selectedMove);
-      if (selectedAbility) refreshAbilityPersonalTools(selectedAbility);
-      if (selectedDex === 'team') renderTeamBuilder();
-      refreshCollectionUI();
-      return;
-    }
-    openAuthModal('login');
-  });
+  elements.profileLogoutButton?.addEventListener('click', logOutCurrentProfile);
 
   document.querySelectorAll('[data-auth-close]').forEach((button) => {
     button.addEventListener('click', closeAuthModal);
@@ -2367,6 +3029,24 @@ function bindProfileControls() {
     setAuthMode(authMode === 'login' ? 'register' : 'login');
   });
   document.getElementById('authForm')?.addEventListener('submit', handleAuthSubmit);
+}
+
+function logOutCurrentProfile() {
+  if (!currentUsername) return;
+  currentUsername = '';
+  localStorage.removeItem('pokedexCurrentUser');
+  applyProfileAppearance({ theme: 'cyan', compactLists: false, reduceMotion: false });
+  if (selectedDex === 'collection' || selectedDex === 'profile') switchDexView('pokemon');
+  updateProfileButton();
+  applyFilter();
+  applyMoveFilters();
+  applyAbilityFilters();
+  if (selectedPokemon) refreshPersonalTools(selectedPokemon);
+  if (selectedMove) refreshMovePersonalTools(selectedMove);
+  if (selectedAbility) refreshAbilityPersonalTools(selectedAbility);
+  if (selectedDex === 'team') renderTeamBuilder();
+  refreshCollectionUI();
+  if (selectedDex === 'profile') renderProfileDashboard();
 }
 
 function setAuthMode(mode) {
@@ -2419,7 +3099,11 @@ function handleAuthSubmit(event) {
       if (message) message.textContent = 'That username already exists on this browser.';
       return;
     }
-    profiles[username] = { password, favorites: [], notes: {}, team: [], teams: [], activeTeamIndex: 0, collection: {}, shiny: {} };
+    profiles[username] = {
+      password, favorites: [], notes: {}, team: [], teams: [], activeTeamIndex: 0,
+      collection: {}, shiny: {}, caughtGoal: 100,
+      appearance: { theme: 'cyan', compactLists: false, reduceMotion: false }
+    };
     saveProfiles(profiles);
   } else if (!profiles[username] || profiles[username].password !== password) {
     if (message) message.textContent = 'Username or password is incorrect.';
@@ -2428,6 +3112,7 @@ function handleAuthSubmit(event) {
 
   currentUsername = username;
   localStorage.setItem('pokedexCurrentUser', currentUsername);
+  applyProfileAppearance();
   updateProfileButton();
   closeAuthModal();
   form.reset();
@@ -2439,6 +3124,7 @@ function handleAuthSubmit(event) {
   if (selectedAbility) refreshAbilityPersonalTools(selectedAbility);
   if (selectedDex === 'team') renderTeamBuilder();
   refreshCollectionUI();
+  if (selectedDex === 'profile') renderProfileDashboard();
 }
 
 function resetFilters() {
@@ -4419,7 +5105,7 @@ function renderPokemonComparison() {
       return `<article class="pokemon-compare-slot"><div><span>POKÉMON ${slot + 1}</span><h3>${escapeHtml(getPokemonCompareLabel(pokemon))}</h3></div><div class="team-option-types">${pokemon.types.filter(Boolean).map(renderMoveTypePill).join('')}</div><div class="pokemon-compare-slot-actions">${formOptions}<button type="button" class="team-slot-remove" data-compare-remove="${slot}" aria-label="Remove ${escapeHtml(pokemon.displayName || pokemon.name)}">Remove</button></div></article>`;
     }).join('')}`;
   if (comparedPokemon.length < 2) {
-    elements.pokemonCompareContent.innerHTML = '<p class="small pokemon-compare-prompt">Add at least two Pokémon from the list to compare their base stats, types, abilities, and learnable moves.</p>';
+    elements.pokemonCompareContent.innerHTML = '<p class="small pokemon-compare-prompt">Add at least two Pokémon from the list to compare.</p>';
     updateComparePokemonOptions();
     attachTypeHoverHandlers(elements.pokemonCompareSlots);
     return;
@@ -6056,13 +6742,15 @@ function bindPokemonGridPicker() {
 
 function renderPokemonGridPicker(pokemonList) {
   if (!elements.pokemonGridEntries) return;
+  const reduceSpriteLoad = getProfileAppearance().reduceSpriteLoad;
   const snapshotChanged = !pokemonGridSnapshot
     || pokemonGridSnapshot.shiny !== shinySpritesEnabled
+    || pokemonGridSnapshot.reduceSpriteLoad !== reduceSpriteLoad
     || pokemonGridSnapshot.pokemon.length !== pokemonList.length
     || pokemonGridSnapshot.pokemon.some((pokemon, index) => pokemon !== pokemonList[index]);
   if (snapshotChanged) {
     elements.pokemonGridEntries.replaceChildren();
-    pokemonGridSnapshot = { pokemon: [...pokemonList], shiny: shinySpritesEnabled };
+    pokemonGridSnapshot = { pokemon: [...pokemonList], shiny: shinySpritesEnabled, reduceSpriteLoad };
     pokemonGridElement = document.createElement('div');
     pokemonGridElement.className = 'pokemon-grid-entries';
     pokemonGridRenderIndex = 0;
@@ -6083,19 +6771,19 @@ function renderPokemonGridPicker(pokemonList) {
     }
     const batchSize = 80;
     const batch = pokemonList.slice(pokemonGridRenderIndex, pokemonGridRenderIndex + batchSize).map((pokemon) => {
-        const spriteBase = getPokemonSpriteBase(pokemon);
         const index = pokemonIndexLookup.get(pokemon);
-        const normalSprite = `sprites/${spriteBase}.png`;
-        const shinySprite = `sprites/shiny/${spriteBase}.png`;
+        const spriteBase = reduceSpriteLoad ? '' : getPokemonSpriteBase(pokemon);
+        const normalSprite = reduceSpriteLoad ? '' : `sprites/${spriteBase}.png`;
+        const shinySprite = reduceSpriteLoad ? '' : `sprites/shiny/${spriteBase}.png`;
         const sprite = shinySpritesEnabled ? shinySprite : normalSprite;
         const typePills = pokemon.types.filter(Boolean).map((type) => {
           const color = TYPE_COLORS[type] || '#475569';
           const abbreviation = GRID_TYPE_ABBREVIATIONS[type] || type.slice(0, 3).toUpperCase();
           return `<span class="pokemon-grid-type" title="${escapeHtml(type)}" aria-label="${escapeHtml(type)}" style="--grid-type-color:${color}">${escapeHtml(abbreviation)}</span>`;
         }).join('');
-        return `<button type="button" class="pokemon-grid-card" data-pokemon-index="${index}">
+        return `<button type="button" class="pokemon-grid-card${reduceSpriteLoad ? ' no-sprite' : ''}" data-pokemon-index="${index}">
           <span class="pokemon-grid-dex">#${escapeHtml(pokemon.number)}</span>
-          <img src="${escapeHtml(sprite)}" data-normal-sprite="${escapeHtml(normalSprite)}" alt="" loading="lazy" decoding="async" fetchpriority="low" />
+          ${reduceSpriteLoad ? '' : `<img src="${escapeHtml(sprite)}" data-normal-sprite="${escapeHtml(normalSprite)}" alt="" loading="lazy" decoding="async" fetchpriority="low" />`}
           <strong>${escapeHtml(pokemon.displayName || pokemon.name)}</strong>
           <span class="pokemon-grid-types">${typePills}</span>
         </button>`;
@@ -6323,15 +7011,16 @@ function renderList(pokemonList, options = {}) {
   }
   pokemonGridRenderToken += 1;
   elements.pokemonList.replaceChildren();
+  const reduceSpriteLoad = getProfileAppearance().reduceSpriteLoad;
   const renderCard = (pokemon) => {
     const isFavorite = Boolean(profile?.favorites?.includes(getPokemonKey(pokemon)));
     const active = selectedPokemon?.group === pokemon.group ? ' active' : '';
     const pokemonIndex = pokemonIndexLookup.get(pokemon);
-    const spriteBase = getPokemonSpriteBase(pokemon);
-    const normalSprite = `sprites/${spriteBase}.png`;
+    const spriteBase = reduceSpriteLoad ? '' : getPokemonSpriteBase(pokemon);
+    const normalSprite = reduceSpriteLoad ? '' : `sprites/${spriteBase}.png`;
     const sprite = shinySpritesEnabled ? `sprites/shiny/${spriteBase}.png` : normalSprite;
     return `<button type="button" class="pokemon-card pokedex-pokemon-option${active}" data-pokemon-index="${pokemonIndex}" aria-pressed="${Boolean(active)}">
-      <img src="${escapeHtml(sprite)}" data-normal-sprite="${escapeHtml(normalSprite)}" alt="" loading="lazy" decoding="async" fetchpriority="low" />
+      ${reduceSpriteLoad ? '' : `<img src="${escapeHtml(sprite)}" data-normal-sprite="${escapeHtml(normalSprite)}" alt="" loading="lazy" decoding="async" fetchpriority="low" />`}
       <span class="pokedex-pokemon-option-copy">
         <strong><span class="team-option-number">#${escapeHtml(pokemon.number)}</span> ${escapeHtml(pokemon.displayName || pokemon.name)}${isFavorite ? ' <span class="favorite-star" aria-label="Favorite">★</span>' : ''}</strong>
         <span class="team-option-types">${pokemon.types.filter(Boolean).map(renderMoveTypePill).join('')}</span>
@@ -6742,7 +7431,7 @@ function renderDetails(pokemon) {
   if (formSwitcherContainer) formSwitcherContainer.scrollLeft = formSwitcherScrollLeft;
 
   elements.details.querySelector('.mobile-back-button')?.addEventListener('click', () => {
-    document.querySelector('.list-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    document.querySelector('.list-card')?.scrollIntoView({ behavior: getMotionScrollBehavior(), block: 'start' });
     elements.searchInput?.focus({ preventScroll: true });
   });
 
@@ -7635,7 +8324,7 @@ function scrollSelectedListItem(list) {
   const boundedTarget = Math.max(0, Math.min(maxScrollTop, targetTop));
   list.scrollTo({
     top: boundedTarget,
-    behavior: 'smooth'
+    behavior: getMotionScrollBehavior()
   });
 }
 

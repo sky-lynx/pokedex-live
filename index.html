@@ -10,23 +10,25 @@
   <div class="app-shell">
     <header class="hero">
       <div>
-        <p id="heroEyebrow" class="eyebrow">Live Pokédex</p>
+        <p id="heroEyebrow" class="eyebrow">Pokédex Live</p>
         <h1 id="heroTitle">PokéDex Live</h1>
       </div>
       <div class="hero-actions">
-        <div class="hero-buttons">
-          <button id="randomButton" class="button button-primary">Random Pokémon</button>
-          <button id="sidebarToggleButton" type="button" class="button sidebar-toggle-button" aria-expanded="true">Hide list & filters</button>
-          <button id="profileButton" type="button" class="button profile-button">Log in</button>
-        </div>
-        <div class="dex-switcher" role="tablist" aria-label="Dex view">
-          <button id="pokedexTab" class="dex-tab active" type="button" role="tab" aria-label="PokéDex" aria-selected="true" aria-controls="pokedexView"><span class="dex-tab-full">PokéDex</span><span class="dex-tab-short" aria-hidden="true">Dex</span></button>
-          <button id="movedexTab" class="dex-tab" type="button" role="tab" aria-label="MoveDex" aria-selected="false" aria-controls="movedexView"><span class="dex-tab-full">MoveDex</span><span class="dex-tab-short" aria-hidden="true">Moves</span></button>
-          <button id="abilitydexTab" class="dex-tab" type="button" role="tab" aria-label="AbilityDex" aria-selected="false" aria-controls="abilitydexView"><span class="dex-tab-full">AbilityDex</span><span class="dex-tab-short" aria-hidden="true">Abilities</span></button>
-          <button id="teamBuilderTab" class="dex-tab" type="button" role="tab" aria-label="Team Builder" aria-selected="false" aria-controls="teamBuilderView"><span class="dex-tab-full">Team Builder</span><span class="dex-tab-short" aria-hidden="true">Teams</span></button>
-          <button id="pokemonCompareTab" class="dex-tab" type="button" role="tab" aria-label="Compare Pokémon" aria-selected="false" aria-controls="pokemonCompareView"><span class="dex-tab-full">Compare</span><span class="dex-tab-short" aria-hidden="true">Compare</span></button>
-          <button id="damageCalculatorTab" class="dex-tab" type="button" role="tab" aria-label="Damage Calculator" aria-selected="false" aria-controls="damageCalculatorView"><span class="dex-tab-full">Damage Calc</span><span class="dex-tab-short" aria-hidden="true">Damage</span></button>
-          <button id="collectionTab" class="dex-tab" type="button" role="tab" aria-label="Collection" aria-selected="false" aria-controls="collectionView"><span class="dex-tab-full">Collection</span><span class="dex-tab-short" aria-hidden="true">Collection</span></button>
+        <div class="hero-navigation">
+          <div class="hero-buttons">
+            <button id="randomButton" class="button button-primary">Random Pokémon</button>
+            <button id="sidebarToggleButton" type="button" class="button sidebar-toggle-button" aria-expanded="true">Hide list &amp; filters</button>
+          </div>
+          <div class="dex-switcher" role="tablist" aria-label="Dex view">
+            <button id="pokedexTab" class="dex-tab active" type="button" role="tab" aria-label="PokéDex" aria-selected="true" aria-controls="pokedexView"><span class="dex-tab-full">PokéDex</span><span class="dex-tab-short" aria-hidden="true">Dex</span></button>
+            <button id="movedexTab" class="dex-tab" type="button" role="tab" aria-label="MoveDex" aria-selected="false" aria-controls="movedexView"><span class="dex-tab-full">MoveDex</span><span class="dex-tab-short" aria-hidden="true">Moves</span></button>
+            <button id="abilitydexTab" class="dex-tab" type="button" role="tab" aria-label="AbilityDex" aria-selected="false" aria-controls="abilitydexView"><span class="dex-tab-full">AbilityDex</span><span class="dex-tab-short" aria-hidden="true">Abilities</span></button>
+            <button id="teamBuilderTab" class="dex-tab" type="button" role="tab" aria-label="Team Builder" aria-selected="false" aria-controls="teamBuilderView"><span class="dex-tab-full">Team Builder</span><span class="dex-tab-short" aria-hidden="true">Teams</span></button>
+            <button id="pokemonCompareTab" class="dex-tab" type="button" role="tab" aria-label="Compare Pokémon" aria-selected="false" aria-controls="pokemonCompareView"><span class="dex-tab-full">Compare</span><span class="dex-tab-short" aria-hidden="true">Compare</span></button>
+            <button id="damageCalculatorTab" class="dex-tab" type="button" role="tab" aria-label="Damage Calculator" aria-selected="false" aria-controls="damageCalculatorView"><span class="dex-tab-full">Damage Calc</span><span class="dex-tab-short" aria-hidden="true">Damage</span></button>
+            <button id="collectionTab" class="dex-tab" type="button" role="tab" aria-label="Collection" aria-selected="false" aria-controls="collectionView"><span class="dex-tab-full">Collection</span><span class="dex-tab-short" aria-hidden="true">Collect</span></button>
+            <button id="profileTab" class="dex-tab" type="button" role="tab" aria-label="My Profile" aria-selected="false" aria-controls="profileView"><span class="dex-tab-full">My Profile</span><span class="dex-tab-short" aria-hidden="true">Profile</span></button>
+          </div>
         </div>
         <div id="status" class="status-message">Loading sheet data...</div>
       </div>
@@ -225,7 +227,7 @@
       <section class="panel panel-right" id="detailsPanel">
         <div id="details" class="details-placeholder">
           <h2>Pokémon details will appear here</h2>
-          <p>Choose a Pokémon from the list or search for one by name.</p>
+          <p>No Pokémon selected.</p>
         </div>
       </section>
     </main>
@@ -425,7 +427,6 @@
         <div class="section-header">
           <div>
             <h2>Compare Pokémon</h2>
-            <p class="small">Compare base stats, types, abilities, and learnable moves.</p>
           </div>
         </div>
         <div id="pokemonCompareSlots" class="pokemon-compare-slots"></div>
@@ -454,9 +455,7 @@
       </aside>
       <section class="panel panel-right damage-calculator-panel">
         <div class="damage-calculator-heading">
-          <p class="eyebrow">Battle estimate</p>
           <h2>Damage Calculator</h2>
-          <p class="small">Set up both Pokémon, then compare a move.</p>
         </div>
         <div id="damageCombatants" class="damage-combatants"></div>
         <div class="damage-calculation-row">
@@ -487,9 +486,7 @@
       <section class="collection-panel panel" aria-labelledby="collectionTitle">
         <header class="collection-header">
           <div>
-            <p class="eyebrow">Pokémon collection</p>
             <h2 id="collectionTitle">Collection progress</h2>
-            <p class="collection-description">A living checklist for your Pokédex, shiny hunt, and generation goals.</p>
           </div>
         </header>
         <section class="collection-summary" aria-label="Collection summary">
@@ -539,28 +536,6 @@
           </div>
         </div>
         <div class="collection-bulk-grid">
-          <section class="collection-bulk-actions collection-visible-actions" aria-labelledby="collectionBulkTitle">
-            <div class="collection-bulk-heading">
-              <h3 id="collectionBulkTitle">Update visible Pokémon</h3>
-              <span id="collectionVisibleCount" class="collection-visible-count" aria-live="polite">Showing 0 Pokémon</span>
-            </div>
-            <div class="collection-selection-controls">
-              <div class="collection-action-grid">
-                <div class="collection-bulk-buttons collection-visible-status-actions" role="group" aria-label="Update visible Pokémon status">
-                  <button id="collectionResetVisible" type="button" class="collection-status-button" aria-label="Mark visible Pokémon unseen" title="Unseen">U</button>
-                  <button id="collectionMarkSeen" type="button" class="collection-status-button" aria-label="Mark visible Pokémon seen" title="Seen">S</button>
-                  <button id="collectionMarkCaught" type="button" class="collection-status-button" aria-label="Mark visible Pokémon caught" title="Caught">C</button>
-                </div>
-                <div class="collection-bulk-buttons collection-visible-shiny-actions" role="group" aria-label="Update visible Pokémon shiny status">
-                  <button id="collectionMarkVisibleShiny" type="button" class="collection-shiny-button">Mark shiny</button>
-                  <button id="collectionUnmarkVisibleShiny" type="button" class="collection-shiny-button">Unmark shiny</button>
-                </div>
-              </div>
-              <div class="collection-bulk-buttons collection-visible-utilities" role="group" aria-label="More visible Pokémon actions">
-                <button id="collectionSyncVisibleForms" type="button" class="collection-utility-button">Copy visible statuses to forms</button>
-              </div>
-            </div>
-          </section>
           <section class="collection-bulk-actions collection-selection-actions" aria-labelledby="collectionSelectionTitle">
             <div class="collection-bulk-heading">
               <h3 id="collectionSelectionTitle">Selected Pokémon</h3>
@@ -578,9 +553,10 @@
                   <button id="collectionUnmarkSelectedShiny" type="button" class="collection-shiny-button">Unmark shiny</button>
                 </div>
               </div>
-              <div class="collection-bulk-buttons collection-selection-buttons" role="group" aria-label="Select Pokémon">
+              <div class="collection-bulk-buttons collection-selection-buttons" role="group" aria-label="Selection and form actions">
                 <button id="collectionSelectVisible" type="button" class="collection-utility-button">Select visible</button>
                 <button id="collectionClearSelection" type="button" class="collection-utility-button">Clear selection</button>
+                <button id="collectionSyncVisibleForms" type="button" class="collection-utility-button">Copy visible statuses to forms</button>
               </div>
             </div>
           </section>
@@ -589,13 +565,136 @@
         <div id="collectionEntries" class="collection-entries"></div>
       </section>
     </main>
+    <main id="profileView" class="layout profile-view" hidden>
+      <section class="profile-dashboard panel" aria-labelledby="profileDashboardTitle">
+        <header class="profile-dashboard-header">
+          <div>
+            <h2 id="profileDashboardTitle">My Profile</h2>
+            <p id="profileDashboardDescription" class="collection-description">Manage this browser-only profile and its saved items. Accounts do not sync across devices.</p>
+          </div>
+          <div class="profile-backup-actions" role="group" aria-label="Profile actions">
+            <button id="exportProfileBackup" type="button" class="collection-utility-button">Export profile</button>
+            <button id="importProfileBackup" type="button" class="collection-utility-button">Import backup</button>
+            <input id="profileBackupFile" type="file" accept="application/json,.json" hidden />
+          </div>
+        </header>
+        <section class="profile-appearance-section" aria-labelledby="profileAppearanceTitle">
+          <div class="profile-section-heading">
+            <div>
+              <h3 id="profileAppearanceTitle">Appearance</h3>
+            </div>
+          </div>
+          <fieldset class="profile-theme-picker">
+            <legend>Accent color</legend>
+            <div class="profile-theme-options">
+              <button type="button" class="profile-theme-option" data-profile-theme="cyan" aria-pressed="false"><span class="profile-theme-swatch"></span>Cyan</button>
+              <button type="button" class="profile-theme-option" data-profile-theme="violet" aria-pressed="false"><span class="profile-theme-swatch"></span>Violet</button>
+              <button type="button" class="profile-theme-option" data-profile-theme="emerald" aria-pressed="false"><span class="profile-theme-swatch"></span>Emerald</button>
+              <button type="button" class="profile-theme-option" data-profile-theme="rose" aria-pressed="false"><span class="profile-theme-swatch"></span>Rose</button>
+              <button type="button" class="profile-theme-option" data-profile-theme="amber" aria-pressed="false"><span class="profile-theme-swatch"></span>Amber</button>
+            </div>
+          </fieldset>
+          <label class="profile-compact-toggle">
+            <input id="profileCompactLists" type="checkbox" />
+            <span><strong>Compact Pokémon lists</strong><small>Show more Pokémon at once in the main list.</small></span>
+          </label>
+          <label class="profile-compact-toggle">
+            <input id="profileReduceMotion" type="checkbox" />
+            <span><strong>Reduce motion</strong><small>Minimize animations and transitions throughout the site.</small></span>
+          </label>
+          <label class="profile-compact-toggle">
+            <input id="profileReduceSpriteLoad" type="checkbox" />
+            <span><strong>Reduce sprite load</strong><small>Remove sprites from Pokémon lists and Collection to reduce image loading.</small></span>
+          </label>
+          <button id="resetProfileAppearance" type="button" class="collection-utility-button">Reset appearance</button>
+        </section>
+        <section class="profile-account-section" aria-labelledby="profileAccountTitle">
+          <div class="profile-section-heading">
+            <div>
+              <h3 id="profileAccountTitle">Account settings</h3>
+            </div>
+          </div>
+          <form id="profileAccountForm" class="profile-account-form" novalidate>
+            <label>
+              Username
+              <input id="profileAccountUsername" name="username" type="text" minlength="3" maxlength="24" autocomplete="username" required />
+            </label>
+            <label>
+              Current password
+              <input id="profileCurrentPassword" name="currentPassword" type="password" maxlength="80" autocomplete="current-password" required />
+            </label>
+            <label>
+              New password
+              <input id="profileNewPassword" name="newPassword" type="password" minlength="4" maxlength="80" autocomplete="new-password" />
+            </label>
+            <label>
+              Confirm new password
+              <input id="profileConfirmPassword" name="confirmPassword" type="password" maxlength="80" autocomplete="new-password" />
+            </label>
+            <div class="profile-account-actions">
+              <button type="submit" class="button button-primary">Save account changes</button>
+              <button id="profileLogoutButton" type="button" class="profile-account-action profile-logout-button">Log out</button>
+              <button id="deleteLocalProfile" type="button" class="profile-account-action profile-delete-button">Delete local profile</button>
+            </div>
+          </form>
+          <p id="profileAccountStatus" class="profile-save-status" role="status" aria-live="polite" hidden></p>
+        </section>
+        <section class="profile-records-section" aria-labelledby="profileRecordsTitle">
+          <div class="profile-section-heading">
+            <div>
+              <h3 id="profileRecordsTitle">Favorites and notes</h3>
+            </div>
+          </div>
+          <div class="profile-record-toolbar">
+            <div class="profile-record-filters" role="group" aria-label="Filter saved items">
+              <button type="button" class="profile-filter-button active" aria-pressed="true" data-profile-filter="all">All <span data-profile-filter-count="all">0</span></button>
+              <button type="button" class="profile-filter-button" aria-pressed="false" data-profile-filter="favorites">Favorites <span data-profile-filter-count="favorites">0</span></button>
+              <button type="button" class="profile-filter-button" aria-pressed="false" data-profile-filter="notes">Notes <span data-profile-filter-count="notes">0</span></button>
+            </div>
+            <label class="profile-search">
+              <span class="visually-hidden">Search your favorites and notes</span>
+              <input id="profileSearch" type="search" placeholder="Search saved items" autocomplete="off" />
+            </label>
+          </div>
+          <div id="profileRecords" class="profile-records"></div>
+          <section class="profile-data-tools" aria-labelledby="profileDataToolsTitle">
+            <div class="profile-section-heading">
+              <div>
+                <h4 id="profileDataToolsTitle">Clear saved favorites and notes</h4>
+              </div>
+            </div>
+            <div class="profile-data-tool-actions">
+              <button id="profileClearFavorites" type="button" class="collection-utility-button">Clear all favorites</button>
+              <button id="profileClearNotes" type="button" class="collection-utility-button">Clear all notes</button>
+            </div>
+          </section>
+        </section>
+        <section class="profile-goal-section" aria-labelledby="profileGoalTitle">
+          <div class="profile-section-heading">
+            <div>
+              <h3 id="profileGoalTitle">Pokédex goal</h3>
+            </div>
+          </div>
+          <div class="profile-goal-progress">
+            <div class="profile-goal-progress-heading"><span id="profileGoalLabel">0 / 100 caught</span><strong id="profileGoalPercent">0%</strong></div>
+            <div class="profile-goal-track"><div id="profileGoalFill" class="profile-goal-fill"></div></div>
+          </div>
+          <form id="profileGoalForm" class="profile-goal-form" novalidate>
+            <label for="profileGoalInput">Target</label>
+            <input id="profileGoalInput" type="number" min="1" step="1" required />
+            <button type="submit" class="collection-utility-button">Save goal</button>
+            <button id="profileOpenCollection" type="button" class="collection-utility-button">View Collection</button>
+            <p id="profileGoalError" class="profile-goal-error" role="alert" hidden></p>
+          </form>
+        </section>
+        <p id="profileSaveStatus" class="profile-save-status" role="status" aria-live="polite" hidden></p>
+      </section>
+    </main>
   </div>
 
   <nav id="floatingActions" class="floating-actions" aria-label="Quick actions">
     <button id="floatingRandomButton" type="button" class="button button-primary">Random Pokémon</button>
     <button id="floatingSidebarButton" type="button" class="button sidebar-toggle-button">Hide list &amp; filters</button>
-    <button id="floatingCollectionButton" type="button" class="button sidebar-toggle-button">Collection</button>
-    <button id="floatingProfileButton" type="button" class="button profile-button">Log in</button>
   </nav>
 
   <div id="authModal" class="auth-modal" hidden>
