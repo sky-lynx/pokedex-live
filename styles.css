@@ -158,8 +158,31 @@ button, input {
   display: none;
 }
 
+.dex-tab-lock {
+  display: none;
+  position: absolute;
+  z-index: 10;
+  top: 50%;
+  left: 50%;
+  color: #fff;
+  text-shadow: none;
+  font-size: 0.8em;
+  line-height: 1;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+}
+
+.dex-tab.requires-login .dex-tab-lock {
+  display: block;
+}
+
 .dex-tab.active {
   color: #06131c;
+}
+
+.dex-tab.requires-login {
+  filter: grayscale(1);
+  color: rgba(148, 163, 184, 0.38);
 }
 
 .dex-tab:active {
@@ -2594,6 +2617,15 @@ button, input {
   padding: 0.25rem 0.25rem 0.25rem 0;
 }
 
+.pokemon-list-empty {
+  margin: 0;
+  padding: 1rem;
+  border: 1px dashed rgba(148, 163, 184, 0.24);
+  border-radius: 12px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
 .list-card {
   max-height: none;
   overflow: hidden;
@@ -2637,6 +2669,14 @@ button, input {
 }
 
 .move-card h3 {
+  text-align: center;
+}
+
+.ability-card-user-count {
+  display: block;
+  margin-top: 0.25rem;
+  color: var(--text-muted);
+  font-size: 0.72rem;
   text-align: center;
 }
 
@@ -3113,6 +3153,58 @@ button, input {
   background: rgba(153, 27, 27, 0.4);
 }
 
+.profile-delete-confirm-dialog {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: min(calc(100vw - 1rem), 24rem);
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  padding: 0.85rem;
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  border-radius: 16px;
+  background: var(--surface-strong);
+  color: var(--text);
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.5);
+}
+
+.profile-delete-confirm-dialog:not([open]) {
+  display: none;
+}
+
+.profile-delete-confirm-dialog::backdrop {
+  background: transparent;
+}
+
+.profile-delete-confirm-dialog h2 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.profile-delete-confirm-dialog .auth-copy {
+  margin: 0.3rem 0 0.6rem;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.profile-delete-confirm-dialog .auth-field-message {
+  margin: 0 0 0.5rem;
+}
+
+.profile-delete-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+
+.profile-delete-confirm-actions .profile-delete-button {
+  margin-left: 0;
+  min-height: 2rem;
+  padding: 0.35rem 0.65rem;
+  font-size: 0.78rem;
+}
+
 .profile-section-heading {
   align-items: center;
   margin-bottom: 0.7rem;
@@ -3497,7 +3589,7 @@ button, input {
   width: 0;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #22c55e, #67e8f9);
+  background: linear-gradient(90deg, var(--accent), var(--accent-strong));
   transition: width 0.2s ease;
 }
 
@@ -3556,6 +3648,12 @@ button, input {
   gap: 0.45rem;
 }
 
+.collection-gamesets {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
 .collection-generation-card {
   display: grid;
   min-width: 0;
@@ -3610,7 +3708,7 @@ button, input {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #22c55e, #67e8f9);
+  background: linear-gradient(90deg, var(--accent), var(--accent-strong));
 }
 
 .collection-toolbar {
@@ -4288,6 +4386,10 @@ button, input {
     grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 
+  .collection-gamesets {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+
   .collection-bulk-grid {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -4443,6 +4545,10 @@ button, input {
   }
 
   .collection-generations {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .collection-gamesets {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
@@ -7223,6 +7329,11 @@ button, input {
   color: #bae6fd;
 }
 
+.section-tabs[data-content-tab-group="move"] .section-tab.active,
+.section-tabs[data-content-tab-group="ability"] .section-tab.active {
+  color: var(--text);
+}
+
 .content-tab-panel {
   display: grid;
   gap: 1rem;
@@ -7264,6 +7375,10 @@ button, input {
   border-color: rgba(56, 189, 248, 0.36);
   background: linear-gradient(135deg, rgba(56, 189, 248, 0.2), rgba(34, 211, 238, 0.13));
   color: #bae6fd;
+}
+
+.pokemon-detail-tabs .pokemon-detail-tab[data-pokemon-detail-tab="moveset"].active {
+  color: var(--text);
 }
 
 .pokemon-detail-panel {
@@ -8228,7 +8343,8 @@ button, input {
 
 .pokedex-entry-game {
   font-weight: 700;
-  color: var(--accent);
+  color: var(--text);
+  color: color-mix(in srgb, var(--game-color, var(--text)) 28%, var(--text));
 }
 
 .pokedex-entry-text {
@@ -8248,6 +8364,21 @@ button, input {
   overscroll-behavior-x: contain;
   padding: 0.35rem 0.15rem 0.65rem;
   scrollbar-width: thin;
+}
+
+.evolution-chain-linear {
+  min-height: 3.65rem;
+  align-items: center;
+}
+
+.evolution-chain-linear .evolution-tree,
+.evolution-chain-linear .evolution-children {
+  flex-direction: row;
+  align-items: center;
+}
+
+.evolution-chain-linear .evolution-children {
+  padding-block: 0;
 }
 
 .evolution-tree {
@@ -8680,6 +8811,75 @@ button, input {
 .ability-pokemon-table th:nth-child(4),
 .ability-pokemon-table td:nth-child(4) {
   text-align: center;
+}
+
+.ability-overview-card {
+  display: grid;
+  gap: 1rem;
+  margin: 0 0 1rem;
+  padding: 1rem;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 14px;
+  background: rgba(8, 15, 24, 0.5);
+}
+
+.ability-overview-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.6rem;
+}
+
+.ability-overview-metrics > div {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+  padding: 0.65rem;
+  border-radius: 10px;
+  background: rgba(148, 163, 184, 0.07);
+}
+
+.ability-overview-metrics strong {
+  color: var(--accent-strong);
+  font-size: 1.15rem;
+}
+
+.ability-overview-metrics span,
+.ability-type-breakdown h3 {
+  color: var(--text-muted);
+  font-size: 0.74rem;
+}
+
+.ability-type-breakdown {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.ability-type-breakdown h3 {
+  margin: 0;
+}
+
+.ability-type-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.ability-type-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.18rem 0.4rem;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.06);
+}
+
+.ability-type-count .move-type-pill {
+  margin: 0;
+}
+
+.ability-type-count strong {
+  font-size: 0.72rem;
 }
 
 .ability-pokedex-section .pokedex-tabs {

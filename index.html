@@ -23,10 +23,10 @@
             <button id="pokedexTab" class="dex-tab active" type="button" role="tab" aria-label="PokéDex" aria-selected="true" aria-controls="pokedexView"><span class="dex-tab-full">PokéDex</span><span class="dex-tab-short" aria-hidden="true">Dex</span></button>
             <button id="movedexTab" class="dex-tab" type="button" role="tab" aria-label="MoveDex" aria-selected="false" aria-controls="movedexView"><span class="dex-tab-full">MoveDex</span><span class="dex-tab-short" aria-hidden="true">Moves</span></button>
             <button id="abilitydexTab" class="dex-tab" type="button" role="tab" aria-label="AbilityDex" aria-selected="false" aria-controls="abilitydexView"><span class="dex-tab-full">AbilityDex</span><span class="dex-tab-short" aria-hidden="true">Abilities</span></button>
-            <button id="teamBuilderTab" class="dex-tab" type="button" role="tab" aria-label="Team Builder" aria-selected="false" aria-controls="teamBuilderView"><span class="dex-tab-full">Team Builder</span><span class="dex-tab-short" aria-hidden="true">Teams</span></button>
             <button id="pokemonCompareTab" class="dex-tab" type="button" role="tab" aria-label="Compare Pokémon" aria-selected="false" aria-controls="pokemonCompareView"><span class="dex-tab-full">Compare</span><span class="dex-tab-short" aria-hidden="true">Compare</span></button>
             <button id="damageCalculatorTab" class="dex-tab" type="button" role="tab" aria-label="Damage Calculator" aria-selected="false" aria-controls="damageCalculatorView"><span class="dex-tab-full">Damage Calc</span><span class="dex-tab-short" aria-hidden="true">Damage</span></button>
-            <button id="collectionTab" class="dex-tab" type="button" role="tab" aria-label="Collection" aria-selected="false" aria-controls="collectionView"><span class="dex-tab-full">Collection</span><span class="dex-tab-short" aria-hidden="true">Collect</span></button>
+            <button id="teamBuilderTab" class="dex-tab" type="button" role="tab" aria-label="Team Builder" aria-selected="false" aria-controls="teamBuilderView"><span class="dex-tab-full">Team Builder</span><span class="dex-tab-short" aria-hidden="true">Teams</span><span class="dex-tab-lock" aria-hidden="true">🔒</span></button>
+            <button id="collectionTab" class="dex-tab" type="button" role="tab" aria-label="Collection" aria-selected="false" aria-controls="collectionView"><span class="dex-tab-full">Collection</span><span class="dex-tab-short" aria-hidden="true">Collect</span><span class="dex-tab-lock" aria-hidden="true">🔒</span></button>
             <button id="profileTab" class="dex-tab" type="button" role="tab" aria-label="My Profile" aria-selected="false" aria-controls="profileView"><span class="dex-tab-full">My Profile</span><span class="dex-tab-short" aria-hidden="true">Profile</span></button>
           </div>
         </div>
@@ -237,7 +237,7 @@
         <section class="list-card">
           <div class="search-row">
             <label for="moveSearchInput">Search moves</label>
-            <input id="moveSearchInput" type="search" placeholder="Type move name, number, or type..." autocomplete="off" />
+            <input id="moveSearchInput" type="search" placeholder="Search a move..." autocomplete="off" />
           </div>
           <div class="section-header">
             <h2>Moves</h2>
@@ -251,6 +251,11 @@
             <h2>Filters</h2>
             <button id="clearMoveFiltersButton" type="button" class="filters-button">Clear filters</button>
           </div>
+          <div class="filter-mode-tabs" role="tablist" aria-label="Move filter and sort">
+            <button type="button" class="filter-mode-tab active" role="tab" aria-selected="true" aria-controls="moveFilterModePanel-filters" data-move-filter-mode="filters">Filters</button>
+            <button type="button" class="filter-mode-tab" role="tab" aria-selected="false" aria-controls="moveFilterModePanel-sort" data-move-filter-mode="sort">Sort</button>
+          </div>
+          <section id="moveFilterModePanel-filters" class="filter-mode-panel" role="tabpanel">
           <div id="moveFilterTabs" class="filter-tabs" role="tablist" aria-label="Move filters">
             <button type="button" class="filter-tab active" data-move-panel="type" role="tab" aria-selected="true">Type</button>
             <button type="button" class="filter-tab" data-move-panel="category" role="tab" aria-selected="false">Category</button>
@@ -293,6 +298,25 @@
               </div>
             </div>
           </div>
+          </section>
+          <section id="moveFilterModePanel-sort" class="filter-mode-panel sort-panel" role="tabpanel" hidden>
+            <div class="sort-direction-controls" role="group" aria-label="Sort direction">
+              <button type="button" class="sort-direction-button active" data-move-sort-direction="none" aria-pressed="true">None</button>
+              <button type="button" class="sort-direction-button" data-move-sort-direction="asc" aria-pressed="false">Ascending</button>
+              <button type="button" class="sort-direction-button" data-move-sort-direction="desc" aria-pressed="false">Descending</button>
+            </div>
+            <div class="sort-option-section">
+              <h3>Move properties</h3>
+              <div class="generation-grid sort-option-grid">
+                <button type="button" class="generation-button move-sort-option" data-move-sort-key="name" aria-pressed="false">Name</button>
+                <button type="button" class="generation-button move-sort-option" data-move-sort-key="power" aria-pressed="false">Power</button>
+                <button type="button" class="generation-button move-sort-option" data-move-sort-key="accuracy" aria-pressed="false">Accuracy</button>
+                <button type="button" class="generation-button move-sort-option" data-move-sort-key="pp" aria-pressed="false">PP</button>
+                <button type="button" class="generation-button move-sort-option" data-move-sort-key="priority" aria-pressed="false">Priority</button>
+                <button type="button" class="generation-button move-sort-option" data-move-sort-key="critRate" aria-pressed="false">Crit rate</button>
+              </div>
+            </div>
+          </section>
         </section>
       </aside>
 
@@ -308,8 +332,8 @@
       <aside class="panel panel-left">
         <section class="list-card">
           <div class="search-row">
-            <label for="abilitySearchInput">Search abilities</label>
-            <input id="abilitySearchInput" type="search" placeholder="Type ability name..." autocomplete="off" />
+            <label for="abilitySearchInput">Search abilities or Pokémon</label>
+            <input id="abilitySearchInput" type="search" placeholder="Search an ability..." autocomplete="off" />
           </div>
           <div class="section-header">
             <h2>Abilities</h2>
@@ -323,9 +347,11 @@
             <h2>Filters</h2>
             <button id="clearAbilityFiltersButton" type="button" class="filters-button">Clear filters</button>
           </div>
-          <div id="abilityFilterTabs" class="filter-tabs" role="tablist" aria-label="Ability filters">
-            <button type="button" class="filter-tab active" data-ability-panel="custom" role="tab" aria-selected="true">Custom</button>
+          <div class="filter-mode-tabs" role="tablist" aria-label="Ability filter and sort">
+            <button type="button" class="filter-mode-tab active" role="tab" aria-selected="true" aria-controls="abilityFilterModePanel-filters" data-ability-filter-mode="filters">Filters</button>
+            <button type="button" class="filter-mode-tab" role="tab" aria-selected="false" aria-controls="abilityFilterModePanel-sort" data-ability-filter-mode="sort">Sort</button>
           </div>
+          <section id="abilityFilterModePanel-filters" class="filter-mode-panel" role="tabpanel">
           <div id="abilityFilterPanels">
             <div id="abilityPanel-custom" class="filter-panel">
               <div class="custom-filter-section">
@@ -354,6 +380,21 @@
               </div>
             </div>
           </div>
+          </section>
+          <section id="abilityFilterModePanel-sort" class="filter-mode-panel sort-panel" role="tabpanel" hidden>
+            <div class="sort-direction-controls" role="group" aria-label="Sort direction">
+              <button type="button" class="sort-direction-button active" data-ability-sort-direction="none" aria-pressed="true">None</button>
+              <button type="button" class="sort-direction-button" data-ability-sort-direction="asc" aria-pressed="false">Ascending</button>
+              <button type="button" class="sort-direction-button" data-ability-sort-direction="desc" aria-pressed="false">Descending</button>
+            </div>
+            <div class="sort-option-section">
+              <h3>Abilities</h3>
+              <div class="generation-grid sort-option-grid">
+                <button type="button" class="generation-button ability-sort-option" data-ability-sort-key="name" aria-pressed="false">Name</button>
+                <button type="button" class="generation-button ability-sort-option" data-ability-sort-key="users" aria-pressed="false">Pokémon users</button>
+              </div>
+            </div>
+          </section>
         </section>
       </aside>
 
@@ -506,11 +547,19 @@
           <div class="collection-section-heading">
             <div>
               <h3 id="collectionGenerationsTitle">Generation progress</h3>
-              <p>Pick a region to focus your checklist.</p>
             </div>
             <button id="collectionGenerationReset" type="button" class="collection-utility-button active" aria-pressed="true">All regions</button>
           </div>
           <div id="collectionGenerations" class="collection-generations"></div>
+        </section>
+        <section class="collection-generations-section collection-gamesets-section" aria-labelledby="collectionGamesetsTitle">
+          <div class="collection-section-heading">
+            <div>
+              <h3 id="collectionGamesetsTitle">Game-set progress</h3>
+1            </div>
+            <button id="collectionGamesetReset" type="button" class="collection-utility-button active" aria-pressed="true">All game sets</button>
+          </div>
+          <div id="collectionGamesets" class="collection-gamesets"></div>
         </section>
         <div class="collection-toolbar">
           <div class="collection-control-group collection-search-group">
@@ -680,10 +729,10 @@
             <div class="profile-progress-track"><div id="profileCaughtProgressFill" class="profile-progress-fill" role="progressbar" aria-label="Pokémon caught progress" aria-valuemin="0" aria-valuemax="1025" aria-valuenow="0"></div></div>
             <div class="profile-progress-heading"><span id="profileBaseShinyProgressLabel">0 / 1,025 base-form shinies</span><strong id="profileBaseShinyProgressPercent">0%</strong></div>
             <div class="profile-progress-track"><div id="profileBaseShinyProgressFill" class="profile-progress-fill profile-progress-fill-base-shiny" role="progressbar" aria-label="Base-form shiny Pokémon progress" aria-valuemin="0" aria-valuemax="1025" aria-valuenow="0"></div></div>
-            <div class="profile-progress-heading"><span id="profileShinyProgressLabel">0 / 1,496 shinies</span><strong id="profileShinyProgressPercent">0%</strong></div>
-            <div class="profile-progress-track"><div id="profileShinyProgressFill" class="profile-progress-fill profile-progress-fill-shiny" role="progressbar" aria-label="Shiny   Pokémon across all forms progress" aria-valuemin="0" aria-valuemax="1496" aria-valuenow="0"></div></div>
             <div class="profile-progress-heading"><span id="profileFormsProgressLabel">0 / 1,496 all forms</span><strong id="profileFormsProgressPercent">0%</strong></div>
             <div class="profile-progress-track"><div id="profileFormsProgressFill" class="profile-progress-fill profile-progress-fill-forms" role="progressbar" aria-label="All forms caught progress" aria-valuemin="0" aria-valuemax="1496" aria-valuenow="0"></div></div>
+            <div class="profile-progress-heading"><span id="profileShinyProgressLabel">0 / 1,496 shinies</span><strong id="profileShinyProgressPercent">0%</strong></div>
+            <div class="profile-progress-track"><div id="profileShinyProgressFill" class="profile-progress-fill profile-progress-fill-shiny" role="progressbar" aria-label="Shiny Pokémon across all forms progress" aria-valuemin="0" aria-valuemax="1496" aria-valuenow="0"></div></div>
           </div>
           <div class="profile-progress-actions">
             <button id="profileOpenCollection" type="button" class="collection-utility-button">View Collection</button>
@@ -727,6 +776,16 @@
         <button id="collectionConfirmCancel" type="button" class="collection-utility-button" data-collection-confirm-cancel>Cancel</button>
         <button id="collectionConfirmApply" type="button" class="button button-primary">Confirm</button>
       </div>
+  </dialog>
+
+  <dialog id="profileDeleteConfirmModal" class="profile-delete-confirm-dialog" aria-labelledby="profileDeleteConfirmTitle" aria-describedby="profileDeleteConfirmMessage">
+    <h2 id="profileDeleteConfirmTitle">Delete local profile?</h2>
+    <p id="profileDeleteConfirmMessage" class="auth-copy">You will lose all progress and data associated with this profile.</p>
+    <p id="profileDeleteConfirmError" class="auth-field-message" role="alert"></p>
+    <div class="profile-delete-confirm-actions">
+      <button id="profileDeleteConfirmCancel" type="button" class="collection-utility-button">Cancel</button>
+      <button id="profileDeleteConfirmApply" type="button" class="profile-account-action profile-delete-button">Delete profile</button>
+    </div>
   </dialog>
 
   <script src="script.js"></script>

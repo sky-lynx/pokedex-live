@@ -120,6 +120,8 @@ const elements = {
   collectionFormsFilter: document.getElementById('collectionFormsFilter'),
   collectionGenerations: document.getElementById('collectionGenerations'),
   collectionGenerationReset: document.getElementById('collectionGenerationReset'),
+  collectionGamesets: document.getElementById('collectionGamesets'),
+  collectionGamesetReset: document.getElementById('collectionGamesetReset'),
   collectionSyncVisibleForms: document.getElementById('collectionSyncVisibleForms'),
   collectionSelectVisible: document.getElementById('collectionSelectVisible'),
   collectionClearSelection: document.getElementById('collectionClearSelection'),
@@ -140,6 +142,10 @@ const elements = {
   profileNewPassword: document.getElementById('profileNewPassword'),
   profileConfirmPassword: document.getElementById('profileConfirmPassword'),
   deleteLocalProfile: document.getElementById('deleteLocalProfile'),
+  profileDeleteConfirmModal: document.getElementById('profileDeleteConfirmModal'),
+  profileDeleteConfirmCancel: document.getElementById('profileDeleteConfirmCancel'),
+  profileDeleteConfirmApply: document.getElementById('profileDeleteConfirmApply'),
+  profileDeleteConfirmError: document.getElementById('profileDeleteConfirmError'),
   profileAccountStatus: document.getElementById('profileAccountStatus'),
   profileSearch: document.getElementById('profileSearch'),
   profileRecords: document.getElementById('profileRecords'),
@@ -206,6 +212,7 @@ let filteredPokemon = [];
 let pokemonIndexLookup = new WeakMap();
 let pokemonByKey = new Map();
 let pokemonListRenderToken = 0;
+let pokemonSearchTimer = null;
 let pendingPokemonScroll = false;
 let activeType = null;
 let selectedPokemon = null;
@@ -269,11 +276,15 @@ let abilityDescriptionGamesets = [];
 let selectedMoveTypes = new Set();
 let selectedMoveCategoryFilter = 'any';
 let selectedMoveTarget = 'any';
+let selectedMoveSortKey = '';
+let selectedMoveSortDirection = 'none';
 let moveFavoriteFilter = 'any';
 let moveNoteFilter = 'any';
 let abilityFavoriteFilter = 'any';
 let abilityNoteFilter = 'any';
 let abilitySlotFilter = 'any';
+let selectedAbilitySortKey = '';
+let selectedAbilitySortDirection = 'none';
 const TEAM_SIZE = 6;
 const TEAM_SLOT_COUNT = 3;
 const GUEST_TEAM_STORAGE_KEY = 'pokedexGuestTeam';
@@ -300,6 +311,7 @@ let currentUsername = localStorage.getItem('pokedexCurrentUser') || '';
 let collectionSortOrder = 'dex';
 let collectionShinyOnly = false;
 let collectionGenerationFilter = 'all';
+let collectionGamesetFilter = 'all';
 let collectionShowAllForms = false;
 let profileRecordsFilter = 'all';
 const PROFILE_THEMES = {
@@ -330,8 +342,8 @@ const GEN_RANGES = {
   5: [494, 649],
   6: [650, 721],
   7: [722, 809],
-  8: [810, 898],
-  9: [899, 1025]
+  8: [810, 905],
+  9: [906, 1025]
 };
 
 window.addEventListener('DOMContentLoaded', () => {
@@ -397,6 +409,58 @@ async function initialize() {
   elements.searchInput.addEventListener('input', handleSearch);
   elements.moveSearchInput?.addEventListener('input', applyMoveFilters);
   elements.abilitySearchInput?.addEventListener('input', applyAbilityFilters);
+  document.querySelectorAll('#abilitydexView .filter-mode-tab').forEach((button) => {
+    button.addEventListener('click', () => {
+      const mode = button.dataset.abilityFilterMode;
+      document.querySelectorAll('#abilitydexView .filter-mode-tab').forEach((tab) => {
+        const isActive = tab === button;
+        tab.classList.toggle('active', isActive);
+        tab.setAttribute('aria-selected', String(isActive));
+      });
+      document.querySelectorAll('#abilitydexView .filter-mode-panel').forEach((panel) => {
+        panel.hidden = panel.id !== `abilityFilterModePanel-${mode}`;
+      });
+      const clearFiltersButton = document.getElementById('clearAbilityFiltersButton');
+      if (clearFiltersButton) {
+        const isSortMode = mode === 'sort';
+        clearFiltersButton.classList.toggle('visually-hidden', isSortMode);
+        clearFiltersButton.inert = isSortMode;
+        clearFiltersButton.setAttribute('aria-hidden', String(isSortMode));
+      }
+    });
+  });
+  document.querySelectorAll('#abilitydexView .ability-sort-option').forEach((button) => {
+    button.addEventListener('click', () => {
+      selectedAbilitySortKey = button.dataset.abilitySortKey || '';
+      if (selectedAbilitySortDirection === 'none') selectedAbilitySortDirection = 'asc';
+      updateAbilitySortControls();
+      applyAbilityFilters();
+    });
+  });
+  document.querySelectorAll('#abilitydexView [data-ability-sort-direction]').forEach((button) => {
+    button.addEventListener('click', () => {
+      selectedAbilitySortDirection = button.dataset.abilitySortDirection || 'none';
+      if (selectedAbilitySortDirection === 'none') selectedAbilitySortKey = '';
+      updateAbilitySortControls();
+      applyAbilityFilters();
+    });
+  });
+  updateAbilitySortControls();
+  document.querySelector('#abilitydexView .filter-mode-tab[data-ability-filter-mode="filters"]')?.click();
+  document.querySelectorAll('#abilitydexView .filter-tab').forEach((button) => {
+    button.addEventListener('click', () => {
+      document.querySelectorAll('#abilitydexView .filter-tab').forEach((tab) => {
+        const isActive = tab === button;
+        tab.classList.toggle('active', isActive);
+        tab.setAttribute('aria-selected', String(isActive));
+      });
+      document.querySelectorAll('#abilitydexView #abilityFilterPanels .filter-panel').forEach((panel) => {
+        panel.style.display = 'none';
+      });
+      const panel = document.getElementById(`abilityPanel-${button.dataset.abilityPanel}`);
+      if (panel) panel.style.display = '';
+    });
+  });
   elements.moveTypeButtons?.addEventListener('click', (event) => {
     const button = event.target.closest('[data-move-type]');
     if (!button) return;
@@ -447,6 +511,8 @@ async function initialize() {
     selectedMoveTypes.clear();
     selectedMoveCategoryFilter = 'any';
     selectedMoveTarget = 'any';
+    selectedMoveSortKey = '';
+    selectedMoveSortDirection = 'none';
     moveFavoriteFilter = 'any';
     moveNoteFilter = 'any';
     document.querySelectorAll('#movePanel-custom .custom-filter-button').forEach((button) => {
@@ -454,6 +520,7 @@ async function initialize() {
     });
     resetMoveRangeFilters();
     updateMoveFilterButtons();
+    updateMoveSortControls();
     applyMoveFilters();
   });
   document.querySelectorAll('#abilityPanel-custom .custom-filter-button').forEach((button) => {
@@ -900,16 +967,26 @@ function bindFloatingActions() {
 }
 
 function bindSidebarToggle() {
+  const activeLayout = document.querySelector('.layout:not([hidden])');
+  const collapsed = localStorage.getItem('pokedexSidebarCollapsed') === 'true';
+  activeLayout?.classList.toggle('sidebar-collapsed', collapsed);
+  const label = collapsed ? 'Show list & filters' : 'Hide list & filters';
+  elements.sidebarToggleButton?.setAttribute('aria-expanded', String(!collapsed));
+  if (elements.sidebarToggleButton) elements.sidebarToggleButton.textContent = label;
+  elements.floatingSidebarButton?.setAttribute('aria-expanded', String(!collapsed));
+  if (elements.floatingSidebarButton) elements.floatingSidebarButton.textContent = label;
+
   elements.sidebarToggleButton?.addEventListener('click', () => {
-    const activeLayout = document.querySelector('.layout:not([hidden])');
-    if (!activeLayout) return;
-    const collapsed = activeLayout.classList.toggle('sidebar-collapsed');
-    const label = collapsed ? 'Show list & filters' : 'Hide list & filters';
-    elements.sidebarToggleButton.setAttribute('aria-expanded', String(!collapsed));
-    elements.sidebarToggleButton.textContent = label;
+    const layout = document.querySelector('.layout:not([hidden])');
+    if (!layout) return;
+    const isCollapsed = layout.classList.toggle('sidebar-collapsed');
+    localStorage.setItem('pokedexSidebarCollapsed', String(isCollapsed));
+    const nextLabel = isCollapsed ? 'Show list & filters' : 'Hide list & filters';
+    elements.sidebarToggleButton.setAttribute('aria-expanded', String(!isCollapsed));
+    elements.sidebarToggleButton.textContent = nextLabel;
     if (elements.floatingSidebarButton) {
-      elements.floatingSidebarButton.setAttribute('aria-expanded', String(!collapsed));
-      elements.floatingSidebarButton.textContent = label;
+      elements.floatingSidebarButton.setAttribute('aria-expanded', String(!isCollapsed));
+      elements.floatingSidebarButton.textContent = nextLabel;
     }
   });
 }
@@ -1130,7 +1207,7 @@ function bindDexSwitcher() {
 }
 
 function switchDexView(dex) {
-  if ((dex === 'collection' || dex === 'profile') && !currentUsername) {
+  if ((dex === 'team' || dex === 'collection' || dex === 'profile') && !currentUsername) {
     openAuthModal('login');
     return;
   }
@@ -1138,9 +1215,9 @@ function switchDexView(dex) {
     pokemon: document.getElementById('pokedexView'),
     move: document.getElementById('movedexView'),
     ability: document.getElementById('abilitydexView'),
-    team: document.getElementById('teamBuilderView'),
     compare: elements.pokemonCompareView,
     calculator: document.getElementById('damageCalculatorView'),
+    team: document.getElementById('teamBuilderView'),
     collection: elements.collectionView,
     profile: document.getElementById('profileView')
   };
@@ -1148,9 +1225,9 @@ function switchDexView(dex) {
     pokemon: document.getElementById('pokedexTab'),
     move: document.getElementById('movedexTab'),
     ability: document.getElementById('abilitydexTab'),
-    team: document.getElementById('teamBuilderTab'),
     compare: document.getElementById('pokemonCompareTab'),
     calculator: document.getElementById('damageCalculatorTab'),
+    team: document.getElementById('teamBuilderTab'),
     collection: document.getElementById('collectionTab'),
     profile: document.getElementById('profileTab')
   };
@@ -2043,6 +2120,24 @@ function bindProfileDashboard() {
   });
   elements.profileAccountForm?.addEventListener('submit', updateLocalProfileAccount);
   elements.deleteLocalProfile?.addEventListener('click', deleteCurrentLocalProfile);
+  elements.profileDeleteConfirmCancel?.addEventListener('click', () => {
+    elements.profileDeleteConfirmModal?.close();
+  });
+  elements.profileDeleteConfirmModal?.addEventListener('close', () => {
+    elements.deleteLocalProfile?.focus();
+  });
+  document.addEventListener('pointerdown', (event) => {
+    if (
+      elements.profileDeleteConfirmModal?.open
+      && !elements.profileDeleteConfirmModal.contains(event.target)
+      && !elements.deleteLocalProfile?.contains(event.target)
+    ) {
+      elements.profileDeleteConfirmModal.close();
+    }
+  });
+  elements.profileDeleteConfirmApply?.addEventListener('click', () => {
+    confirmDeleteCurrentLocalProfile();
+  });
   elements.profileRecords?.addEventListener('click', (event) => {
     const openButton = event.target.closest('[data-profile-open]');
     if (openButton) {
@@ -2196,15 +2291,29 @@ function updateLocalProfileAccount(event) {
 }
 
 function deleteCurrentLocalProfile() {
-  const currentPassword = String(elements.profileCurrentPassword?.value || '');
   const profiles = getProfiles();
   const profile = profiles[currentUsername];
-  if (!profile || profile.password !== currentPassword) {
+  if (!currentUsername || !profile) {
+    setProfileAccountStatus('Could not find the active local profile to delete.');
+    return;
+  }
+  const currentPassword = String(elements.profileCurrentPassword?.value || '');
+  if (profile.password !== currentPassword) {
     setProfileAccountStatus('Enter the current password to delete this profile.');
     elements.profileCurrentPassword?.focus();
     return;
   }
-  if (!window.confirm(`Permanently delete the local profile "${currentUsername}" and all its saved data from this browser?`)) {
+  if (elements.profileDeleteConfirmError) elements.profileDeleteConfirmError.textContent = '';
+  elements.profileDeleteConfirmModal?.show();
+  positionProfileDeleteConfirmation();
+  elements.profileDeleteConfirmCancel?.focus();
+}
+
+function confirmDeleteCurrentLocalProfile() {
+  const profiles = getProfiles();
+  const profile = profiles[currentUsername];
+  if (!currentUsername || !profile) {
+    elements.profileDeleteConfirmError.textContent = 'Could not find the active local profile to delete.';
     return;
   }
   try {
@@ -2213,10 +2322,13 @@ function deleteCurrentLocalProfile() {
     localStorage.removeItem('pokedexCurrentUser');
   } catch (error) {
     console.error('Could not delete the local profile.', error);
-    setProfileAccountStatus('Could not delete the local profile. Check browser storage availability.');
+    if (elements.profileDeleteConfirmError) {
+      elements.profileDeleteConfirmError.textContent = 'Could not delete the local profile. Check browser storage availability.';
+    }
     return;
   }
 
+  elements.profileDeleteConfirmModal?.close();
   currentUsername = '';
   updateProfileButton();
   applyProfileAppearance({ theme: 'cyan', compactLists: false, reduceMotion: false });
@@ -2230,6 +2342,26 @@ function deleteCurrentLocalProfile() {
   refreshCollectionUI();
   switchDexView('pokemon');
   if (elements.status) elements.status.textContent = 'Local profile deleted.';
+}
+
+function positionProfileDeleteConfirmation() {
+  const dialog = elements.profileDeleteConfirmModal;
+  const trigger = elements.deleteLocalProfile;
+  if (!dialog?.open || !trigger?.isConnected) return;
+  const triggerBounds = trigger.getBoundingClientRect();
+  const dialogBounds = dialog.getBoundingClientRect();
+  const margin = 8;
+  const gap = 10;
+  const topAbove = triggerBounds.top - dialogBounds.height - gap;
+  const top = topAbove >= margin
+    ? topAbove
+    : Math.min(triggerBounds.bottom + gap, window.innerHeight - dialogBounds.height - margin);
+  const left = Math.max(
+    margin,
+    Math.min(triggerBounds.left + triggerBounds.width / 2 - dialogBounds.width / 2, window.innerWidth - dialogBounds.width - margin)
+  );
+  dialog.style.left = `${left}px`;
+  dialog.style.top = `${Math.max(margin, top)}px`;
 }
 
 function getCurrentProfile() {
@@ -2373,6 +2505,7 @@ function getVisibleCollectionSpecies(species = getCollectionSpecies(), collectio
     return matchesQuery
       && (selectedStatus === 'all' || status === selectedStatus)
       && (collectionGenerationFilter === 'all' || getCollectionGeneration(pokemon) === collectionGenerationFilter)
+      && (collectionGamesetFilter === 'all' || isPokemonInCollectionGameset(pokemon, collectionGamesetFilter))
       && (!collectionShinyOnly || isPokemonShinyFromData(pokemon, shiny));
   });
   if (collectionSortOrder === 'name') {
@@ -2497,7 +2630,7 @@ function renderCollectionGenerations(species, collection) {
     5: 'Unova',
     6: 'Kalos',
     7: 'Alola',
-    8: 'Galar',
+    8: 'Galar / Hisui',
     9: 'Paldea'
   };
   const generations = Object.entries(GEN_RANGES).map(([generation, [start, end]]) => {
@@ -2534,6 +2667,50 @@ function renderCollectionGenerations(species, collection) {
     const allSelected = collectionGenerationFilter === 'all';
     elements.collectionGenerationReset.classList.toggle('active', allSelected);
     elements.collectionGenerationReset.setAttribute('aria-pressed', String(allSelected));
+  }
+}
+
+function isPokemonInCollectionGameset(pokemon, gamesetKey) {
+  const gameset = COLLECTION_GAMESETS.find((item) => item.key === gamesetKey);
+  if (!gameset) return false;
+  const gameKeys = new Set(gameset.games.map(normalizeGameKey));
+  return (pokemon.pokedexEntries || []).some((entry) => gameKeys.has(normalizeGameKey(entry.game)));
+}
+
+function renderCollectionGamesets(species, collection) {
+  const container = elements.collectionGamesets;
+  if (!container) return;
+  const gamesets = COLLECTION_GAMESETS.map((gameset) => {
+    const members = species.filter((pokemon) => isPokemonInCollectionGameset(pokemon, gameset.key));
+    const caught = members.filter((pokemon) => getCollectionStatusFromData(pokemon, collection) === 'caught').length;
+    const percent = members.length ? (caught / members.length) * 100 : 0;
+    const selected = collectionGamesetFilter === gameset.key;
+    return { ...gameset, caught, total: members.length, percent, selected };
+  });
+  const cards = container.querySelectorAll('[data-collection-gameset]');
+  if (cards.length !== gamesets.length) {
+    container.innerHTML = gamesets.map(({ key, label, caught, total, percent, selected }) => `
+      <button type="button" class="collection-generation-card collection-gameset-card${selected ? ' active' : ''}" data-collection-gameset="${key}" aria-pressed="${selected}" aria-label="Filter to ${label}: ${caught} of ${total} caught">
+        <span class="collection-generation-heading"><strong>${label}</strong></span>
+        <span class="collection-generation-track"><span style="width:${percent}%"></span></span>
+        <span class="collection-generation-count">${caught.toLocaleString()} / ${total.toLocaleString()} caught</span>
+      </button>`).join('');
+  } else {
+    gamesets.forEach(({ key, label, caught, total, percent, selected }, index) => {
+      const card = cards[index];
+      card.classList.toggle('active', selected);
+      card.setAttribute('aria-pressed', String(selected));
+      card.setAttribute('aria-label', `Filter to ${label}: ${caught} of ${total} caught`);
+      const trackFill = card.querySelector('.collection-generation-track span');
+      if (trackFill) trackFill.style.width = `${percent}%`;
+      const count = card.querySelector('.collection-generation-count');
+      if (count) count.textContent = `${caught.toLocaleString()} / ${total.toLocaleString()} caught`;
+    });
+  }
+  if (elements.collectionGamesetReset) {
+    const allSelected = collectionGamesetFilter === 'all';
+    elements.collectionGamesetReset.classList.toggle('active', allSelected);
+    elements.collectionGamesetReset.setAttribute('aria-pressed', String(allSelected));
   }
 }
 
@@ -2585,6 +2762,7 @@ function renderCollectionProgress(renderEntries = selectedDex === 'collection') 
     count.textContent = key === 'all' ? species.length.toLocaleString() : statusCountsByKey[key].toLocaleString();
   });
   renderCollectionGenerations(species, collection);
+  renderCollectionGamesets(species, collection);
   const visibleSpecies = getVisibleCollectionSpecies(species, collection, shiny);
   updateCollectionSelectionControls();
   if (elements.collectionSyncVisibleForms) {
@@ -2638,8 +2816,18 @@ function bindCollectionControls() {
     collectionGenerationFilter = generation.dataset.collectionGeneration;
     renderCollectionProgress(true);
   });
+  elements.collectionGamesets?.addEventListener('click', (event) => {
+    const gameset = event.target.closest('[data-collection-gameset]');
+    if (!gameset) return;
+    collectionGamesetFilter = gameset.dataset.collectionGameset;
+    renderCollectionProgress(true);
+  });
   elements.collectionGenerationReset?.addEventListener('click', () => {
     collectionGenerationFilter = 'all';
+    renderCollectionProgress(true);
+  });
+  elements.collectionGamesetReset?.addEventListener('click', () => {
+    collectionGamesetFilter = 'all';
     renderCollectionProgress(true);
   });
   elements.collectionMarkSelectedCaught?.addEventListener('click', (event) => requestSelectedCollectionStatus('caught', event.currentTarget));
@@ -2974,7 +3162,19 @@ function getPokemonKey(pokemon) {
 }
 
 function updateProfileButton() {
-  if (elements.profileDashboard) elements.profileDashboard.hidden = !currentUsername;
+  const isLoggedIn = Boolean(currentUsername);
+  if (elements.profileDashboard) elements.profileDashboard.hidden = !isLoggedIn;
+  [
+    ['teamBuilderTab', 'Team Builder'],
+    ['collectionTab', 'Collection']
+  ].forEach(([id, label]) => {
+    const tab = document.getElementById(id);
+    tab?.classList.toggle('requires-login', !isLoggedIn);
+    tab?.setAttribute('aria-label', isLoggedIn ? label : `${label} (sign in required)`);
+    if (!tab) return;
+    if (isLoggedIn) tab.removeAttribute('title');
+    else tab.title = `Sign in to access ${label.toLowerCase()}`;
+  });
 }
 
 function bindProfileControls() {
@@ -2995,7 +3195,7 @@ function logOutCurrentProfile() {
   currentUsername = '';
   localStorage.removeItem('pokedexCurrentUser');
   applyProfileAppearance({ theme: 'cyan', compactLists: false, reduceMotion: false });
-  if (selectedDex === 'collection' || selectedDex === 'profile') switchDexView('pokemon');
+  if (selectedDex === 'team' || selectedDex === 'collection' || selectedDex === 'profile') switchDexView('pokemon');
   updateProfileButton();
   applyFilter();
   applyMoveFilters();
@@ -3821,6 +4021,27 @@ const POKEDEX_ENTRY_COLUMNS = [
   { index: 42, game: 'Legends: ZA', generation: 9 }
 ];
 
+const COLLECTION_GAMESETS = [
+  { key: 'RGBY', label: 'RGBY', games: ['Red', 'Green', 'Blue', 'Yellow'] },
+  { key: 'GSC', label: 'GSC', games: ['Gold', 'Silver', 'Crystal'] },
+  { key: 'RSE', label: 'RSE', games: ['Ruby', 'Sapphire', 'Emerald'] },
+  { key: 'FRLG', label: 'FRLG', games: ['FireRed', 'LeafGreen'] },
+  { key: 'DPPL', label: 'DPPL', games: ['Diamond', 'Pearl', 'Platinum'] },
+  { key: 'HGSS', label: 'HGSS', games: ['HeartGold', 'SoulSilver'] },
+  { key: 'BW', label: 'BW', games: ['Black', 'White'] },
+  { key: 'B2W2', label: 'B2W2', games: ['Black 2', 'White 2'] },
+  { key: 'XY', label: 'XY', games: ['X', 'Y'] },
+  { key: 'ORAS', label: 'ORAS', games: ['Omega Ruby', 'Alpha Sapphire'] },
+  { key: 'SM', label: 'SM', games: ['Sun', 'Moon'] },
+  { key: 'USUM', label: 'USUM', games: ['Ultra Sun', 'Ultra Moon'] },
+  { key: 'LGPE', label: 'LGPE', games: ["Let's Go Pikachu", "Let's Go Eevee"] },
+  { key: 'SWSH', label: 'SWSH', games: ['Sword', 'Shield'] },
+  { key: 'BDSP', label: 'BDSP', games: ['Brilliant Diamond', 'Shining Pearl'] },
+  { key: 'PLA', label: 'PLA', games: ['Pokemon Legends: Arceus'] },
+  { key: 'SV', label: 'SV', games: ['Scarlet', 'Violet'] },
+  { key: 'ZA', label: 'ZA', games: ['Legends: ZA'] }
+];
+
 const DLC_GAME_NAMES = new Set([
   'Sword Isle of Armor',
   'Shield Isle of Armor',
@@ -4090,6 +4311,57 @@ function bindMoveFilterTabs() {
       applyMoveFilters();
     });
   });
+  document.querySelectorAll('#movedexView .filter-mode-tab').forEach((button) => {
+    button.addEventListener('click', () => {
+      const mode = button.dataset.moveFilterMode;
+      document.querySelectorAll('#movedexView .filter-mode-tab').forEach((tab) => {
+        const isActive = tab === button;
+        tab.classList.toggle('active', isActive);
+        tab.setAttribute('aria-selected', String(isActive));
+      });
+      document.querySelectorAll('#movedexView .filter-mode-panel').forEach((panel) => {
+        panel.hidden = panel.id !== `moveFilterModePanel-${mode}`;
+      });
+      const clearFiltersButton = document.getElementById('clearMoveFiltersButton');
+      if (clearFiltersButton) {
+        const isSortMode = mode === 'sort';
+        clearFiltersButton.classList.toggle('visually-hidden', isSortMode);
+        clearFiltersButton.inert = isSortMode;
+        clearFiltersButton.setAttribute('aria-hidden', String(isSortMode));
+      }
+    });
+  });
+  document.querySelectorAll('#movedexView .move-sort-option').forEach((button) => {
+    button.addEventListener('click', () => {
+      selectedMoveSortKey = button.dataset.moveSortKey || '';
+      if (selectedMoveSortDirection === 'none') selectedMoveSortDirection = 'asc';
+      updateMoveSortControls();
+      applyMoveFilters();
+    });
+  });
+  document.querySelectorAll('#movedexView [data-move-sort-direction]').forEach((button) => {
+    button.addEventListener('click', () => {
+      selectedMoveSortDirection = button.dataset.moveSortDirection || 'none';
+      if (selectedMoveSortDirection === 'none') selectedMoveSortKey = '';
+      updateMoveSortControls();
+      applyMoveFilters();
+    });
+  });
+  updateMoveSortControls();
+}
+
+function updateMoveSortControls() {
+  document.querySelectorAll('#movedexView .move-sort-option').forEach((button) => {
+    const isActive = button.dataset.moveSortKey === selectedMoveSortKey;
+    button.classList.toggle('active', isActive);
+    button.setAttribute('aria-pressed', String(isActive));
+  });
+  document.querySelectorAll('#movedexView [data-move-sort-direction]').forEach((button) => {
+    const isActive = button.dataset.moveSortDirection === selectedMoveSortDirection;
+    button.classList.toggle('active', isActive);
+    button.setAttribute('aria-pressed', String(isActive));
+    button.disabled = !selectedMoveSortKey && button.dataset.moveSortDirection !== 'none';
+  });
 }
 
 function updateMoveFilterButtons() {
@@ -4173,6 +4445,27 @@ function applyMoveFilters() {
       && (moveNoteFilter !== 'hasNote' || hasNote)
       && (moveNoteFilter !== 'noNote' || !hasNote);
   });
+  if (selectedMoveSortKey && selectedMoveSortDirection !== 'none') {
+    const direction = selectedMoveSortDirection === 'asc' ? 1 : -1;
+    filteredMoves = filteredMoves
+      .map((move, index) => {
+        const value = selectedMoveSortKey === 'name'
+          ? move.name
+          : parseMoveFilterNumber(selectedMoveSortKey === 'pp' ? move.minPP : move[selectedMoveSortKey]);
+        return { move, index, value };
+      })
+      .sort((left, right) => {
+        if (left.value === null || left.value === undefined) {
+          return right.value === null || right.value === undefined ? left.index - right.index : 1;
+        }
+        if (right.value === null || right.value === undefined) return -1;
+        const comparison = typeof left.value === 'string'
+          ? left.value.localeCompare(right.value, undefined, { numeric: true, sensitivity: 'base' })
+          : left.value - right.value;
+        return comparison === 0 ? left.index - right.index : comparison * direction;
+      })
+      .map(({ move }) => move);
+  }
   renderMoveList();
   if (selectedMove) return;
   if (filteredMoves.length) {
@@ -4215,7 +4508,7 @@ function renderAbilityList() {
     card.type = 'button';
     card.className = 'pokemon-card move-card';
     const isFavorite = Boolean(profile?.favorites?.includes(getPersonalToolsKey(ability, 'ability')));
-    card.innerHTML = `<h3>${escapeHtml(ability.name)}${isFavorite ? ' <span class="favorite-star" aria-label="Favorite">★</span>' : ''}</h3>`;
+    card.innerHTML = `<h3>${escapeHtml(ability.name)}${isFavorite ? ' <span class="favorite-star" aria-label="Favorite">★</span>' : ''}</h3><span class="ability-card-user-count">${ability.pokemon.length.toLocaleString()} Pokémon</span>`;
     if (selectedAbility?.dexNumber === ability.dexNumber) card.classList.add('active');
     card.addEventListener('click', () => selectAbility(ability));
     elements.abilityList.appendChild(card);
@@ -4228,7 +4521,13 @@ function applyAbilityFilters() {
   const query = String(elements.abilitySearchInput?.value || '').trim().toLowerCase();
   const profile = getCurrentProfile();
   filteredAbilities = allAbilities.filter((ability) => {
-    const matchesQuery = !query || ability.name.toLowerCase().includes(query);
+    const matchesQuery = !query
+      || ability.name.toLowerCase().includes(query)
+      || ability.pokemon.some(({ pokemon }) => (
+        String(pokemon.name || '').toLowerCase().includes(query)
+        || String(pokemon.displayName || '').toLowerCase().includes(query)
+        || String(pokemon.number || '').toLowerCase().includes(query)
+      ));
     const key = getPersonalToolsKey(ability, 'ability');
     const isFavorite = Boolean(profile?.favorites?.includes(key));
     const hasNote = Boolean(profile?.notes?.[key]?.trim());
@@ -4240,6 +4539,22 @@ function applyAbilityFilters() {
       && (abilitySlotFilter === 'any'
         || ability.pokemon.some(({ slots }) => slots.includes(abilitySlotFilter)));
   });
+  if (selectedAbilitySortKey && selectedAbilitySortDirection !== 'none') {
+    const direction = selectedAbilitySortDirection === 'asc' ? 1 : -1;
+    filteredAbilities = filteredAbilities
+      .map((ability, index) => ({
+        ability,
+        index,
+        value: selectedAbilitySortKey === 'users' ? ability.pokemon.length : ability.name
+      }))
+      .sort((left, right) => {
+        const comparison = typeof left.value === 'string'
+          ? left.value.localeCompare(right.value, undefined, { numeric: true, sensitivity: 'base' })
+          : left.value - right.value;
+        return comparison === 0 ? left.index - right.index : comparison * direction;
+      })
+      .map(({ ability }) => ability);
+  }
   renderAbilityList();
 
   if (selectedAbility && filteredAbilities.some((ability) => ability.dexNumber === selectedAbility.dexNumber)) return;
@@ -4249,6 +4564,20 @@ function applyAbilityFilters() {
     selectedAbility = null;
     elements.abilityDetails.innerHTML = '<div class="details-placeholder"><h2>No abilities found</h2><p>Try another search or filter.</p></div>';
   }
+}
+
+function updateAbilitySortControls() {
+  document.querySelectorAll('#abilitydexView .ability-sort-option').forEach((button) => {
+    const isActive = button.dataset.abilitySortKey === selectedAbilitySortKey;
+    button.classList.toggle('active', isActive);
+    button.setAttribute('aria-pressed', String(isActive));
+  });
+  document.querySelectorAll('#abilitydexView [data-ability-sort-direction]').forEach((button) => {
+    const isActive = button.dataset.abilitySortDirection === selectedAbilitySortDirection;
+    button.classList.toggle('active', isActive);
+    button.setAttribute('aria-pressed', String(isActive));
+    button.disabled = !selectedAbilitySortKey && button.dataset.abilitySortDirection !== 'none';
+  });
 }
 
 function selectAbility(ability) {
@@ -5707,6 +6036,17 @@ function renderMoveDetails(move) {
 }
 
 function renderAbilityDetails(ability) {
+  const usersByType = ability.pokemon.reduce((counts, { pokemon }) => {
+    pokemon.types.filter(Boolean).forEach((type) => {
+      counts[type] = (counts[type] || 0) + 1;
+    });
+    return counts;
+  }, {});
+  const hiddenUsers = ability.pokemon.filter(({ slots }) => slots.includes('Hidden')).length;
+  const typeSummary = Object.entries(usersByType)
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .map(([type, count]) => `<span class="ability-type-count">${renderMoveTypePill(type)}<strong>${count.toLocaleString()}</strong></span>`)
+    .join('');
   elements.abilityDetails.classList.remove('details-placeholder');
   elements.abilityDetails.innerHTML = `
     <article class="detail-card move-detail-card ability-detail-card">
@@ -5718,6 +6058,13 @@ function renderAbilityDetails(ability) {
           <button type="button" class="section-tab${selectedAbilityDetailTab === key ? ' active' : ''}" role="tab" aria-selected="${selectedAbilityDetailTab === key}" aria-controls="ability-panel-${key}" tabindex="${selectedAbilityDetailTab === key ? '0' : '-1'}" data-content-tab="${key}">${label}</button>`).join('')}
       </div>
       <section id="ability-panel-basic" class="content-tab-panel${selectedAbilityDetailTab === 'basic' ? ' active' : ''}" role="tabpanel" data-content-panel="basic"${selectedAbilityDetailTab === 'basic' ? '' : ' hidden'}>
+      <section class="ability-overview-card" aria-label="Ability user summary">
+        <div class="ability-overview-metrics">
+          <div><strong>${ability.pokemon.length.toLocaleString()}</strong><span>Pokémon forms</span></div>
+          <div><strong>${hiddenUsers.toLocaleString()}</strong><span>Hidden Ability users</span></div>
+        </div>
+        <div class="ability-type-breakdown"><h3>Users by type</h3><div class="ability-type-counts">${typeSummary || '<span class="small">No Pokémon type data available.</span>'}</div></div>
+      </section>
       ${renderPersonalTools(ability, 'ability')}
       </section>
       <section id="ability-panel-entries" class="content-tab-panel${selectedAbilityDetailTab === 'entries' ? ' active' : ''}" role="tabpanel" data-content-panel="entries"${selectedAbilityDetailTab === 'entries' ? '' : ' hidden'}>
@@ -5762,11 +6109,11 @@ function renderAbilityEntriesSection(ability) {
     const game = MOVE_GAMESET_INFO[gameset]?.label || gameset;
     const description = ability.descriptions[gameset];
     if (!description) {
-      return `<div class="pokedex-entry-box pokedex-no-entry"><div class="pokedex-entry-game">${escapeHtml(game)}</div><div class="pokedex-entry-text">No Dex Entry</div></div>`;
+      return `<div class="pokedex-entry-box pokedex-no-entry">${renderPokedexEntryGameTitle(game)}<div class="pokedex-entry-text">No Dex Entry</div></div>`;
     }
     const color = getGameGradientColor(game) || '#38bdf8';
     const gradient = color.startsWith('rgba(') ? color : hexToRgba(color, 0.18);
-    return `<div class="pokedex-entry-box" style="background:linear-gradient(360deg,rgba(15,23,32,0.92),${gradient})"><div class="pokedex-entry-game">${escapeHtml(game)}</div><div class="pokedex-entry-text">${escapeHtml(description)}</div></div>`;
+    return `<div class="pokedex-entry-box" style="background:linear-gradient(360deg,rgba(15,23,32,0.92),${gradient})">${renderPokedexEntryGameTitle(game)}<div class="pokedex-entry-text">${escapeHtml(description)}</div></div>`;
   }).join('');
   const content = cards || `<div class="pokedex-empty">No ability entries are listed for ${selectedAbilityGen === 'CHA' ? 'Pokémon Champions' : `Generation ${selectedAbilityGen}`}.</div>`;
   return `
@@ -5782,7 +6129,7 @@ function renderAbilityPokemonSection(ability) {
     ? ability.pokemon.map(({ pokemon, slots }) => `
         <tr>
           <td>#${escapeHtml(pokemon.number)}</td>
-          <td><button type="button" class="dex-navigation-link pokemon-navigation-link" data-pokemon-number="${escapeHtml(pokemon.number)}" data-pokemon-name="${escapeHtml(pokemon.name)}">${escapeHtml(pokemon.displayName || pokemon.name)}</button></td>
+          <td><button type="button" class="dex-navigation-link pokemon-navigation-link" data-pokemon-number="${escapeHtml(pokemon.number)}" data-pokemon-name="${escapeHtml(pokemon.name)}">${escapeHtml(pokemon.name)}</button></td>
           <td><div class="move-learner-types">${pokemon.types.filter(Boolean).map((type) => renderTypeBadge(type, { compact: true })).join('') || '—'}</div></td>
           <td>${slots.map(escapeHtml).join(', ')}</td>
         </tr>`).join('')
@@ -5837,11 +6184,11 @@ function renderMovePokedexSection(move) {
     const game = MOVE_GAMESET_INFO[gameset]?.label || gameset;
     const description = descriptions[gameset];
     if (!description) {
-      return `<div class="pokedex-entry-box pokedex-no-entry"><div class="pokedex-entry-game">${escapeHtml(game)}</div><div class="pokedex-entry-text">No Dex Entry</div></div>`;
+      return `<div class="pokedex-entry-box pokedex-no-entry">${renderPokedexEntryGameTitle(game)}<div class="pokedex-entry-text">No Dex Entry</div></div>`;
     }
     const color = getGameGradientColor(game) || '#38bdf8';
     const gradient = color.startsWith('rgba(') ? color : hexToRgba(color, 0.18);
-    return `<div class="pokedex-entry-box" style="background:linear-gradient(360deg,rgba(15,23,32,0.92),${gradient})"><div class="pokedex-entry-game">${escapeHtml(game)}</div><div class="pokedex-entry-text">${escapeHtml(description)}</div></div>`;
+    return `<div class="pokedex-entry-box" style="background:linear-gradient(360deg,rgba(15,23,32,0.92),${gradient})">${renderPokedexEntryGameTitle(game)}<div class="pokedex-entry-text">${escapeHtml(description)}</div></div>`;
   }).join('');
   const content = cards || `<div class="pokedex-empty">No move description gamesets are listed for ${selectedMoveGen === 'CHA' ? 'Pokémon Champions' : `Generation ${selectedMoveGen}`}.</div>`;
   return `
@@ -6021,6 +6368,12 @@ function getGameGradientColor(gameName) {
   const saturation = 55 + (Math.abs(hash) % 20);
   const lightness = 45 + (Math.abs(hash) % 15);
   return hslToHex(hue, saturation, lightness);
+}
+
+function renderPokedexEntryGameTitle(gameName) {
+  const color = getGameGradientColor(gameName);
+  const style = color ? ` style="--game-color:${color}"` : '';
+  return `<div class="pokedex-entry-game"${style}>${escapeHtml(gameName)}</div>`;
 }
 
 function hexIsLight(hex) {
@@ -6676,12 +7029,26 @@ function updatePokemonSortControls() {
 }
 
 function handleSearch() {
-  applyFilter();
+  window.clearTimeout(pokemonSearchTimer);
+  pokemonSearchTimer = null;
+  if (!elements.searchInput.value.trim()) {
+    applyFilter();
+    return;
+  }
+  pokemonSearchTimer = window.setTimeout(() => {
+    pokemonSearchTimer = null;
+    applyFilter();
+  }, 100);
 }
 
 function bindPokemonGridPicker() {
+  pokemonGridViewEnabled = localStorage.getItem('pokedexGridView') === 'true';
+  elements.pokedexView.classList.toggle('pokedex-grid-view', pokemonGridViewEnabled);
+  elements.gridViewButton?.setAttribute('aria-pressed', String(pokemonGridViewEnabled));
+  if (elements.gridViewButton) elements.gridViewButton.textContent = pokemonGridViewEnabled ? 'List' : 'Grid';
   elements.gridViewButton?.addEventListener('click', () => {
     pokemonGridViewEnabled = !pokemonGridViewEnabled;
+    localStorage.setItem('pokedexGridView', String(pokemonGridViewEnabled));
     elements.pokedexView.classList.toggle('pokedex-grid-view', pokemonGridViewEnabled);
     elements.gridViewButton.setAttribute('aria-pressed', String(pokemonGridViewEnabled));
     elements.gridViewButton.textContent = pokemonGridViewEnabled ? 'List' : 'Grid';
@@ -6987,6 +7354,10 @@ function renderList(pokemonList, options = {}) {
       <span class="pokedex-pokemon-selection">${active ? 'Selected' : ''}</span>
     </button>`;
   };
+  if (!pokemonList.length) {
+    elements.pokemonList.innerHTML = '<p class="pokemon-list-empty" role="status">No Pokémon match the current search and filters.</p>';
+    return;
+  }
   if (options.renderListImmediately) {
     elements.pokemonList.insertAdjacentHTML('beforeend', pokemonList.map(renderCard).join(''));
     elements.pokemonList.scrollTop = scrollTop;
@@ -7059,7 +7430,6 @@ function findEvolutionParent(pokemon) {
 }
 
 function getEvolutionEdges(pokemon) {
-  if (!allPokemon.some((candidate) => candidate.evolvesFrom)) return [];
   const resolveParent = createEvolutionParentResolver();
   let root = pokemon;
   const ancestors = new Set([pokemon]);
@@ -7146,7 +7516,6 @@ function renderEvolutionNode(pokemon, childrenByParent, rendered = new Set()) {
 
 function renderEvolutionSection(pokemon) {
   const edges = getEvolutionEdges(pokemon);
-  if (!edges.length) return '';
   const resolveParent = createEvolutionParentResolver();
   let root = pokemon;
   const ancestors = new Set([pokemon]);
@@ -7173,10 +7542,11 @@ function renderEvolutionSection(pokemon) {
     if (!childrenByParent.has(edge.parent)) childrenByParent.set(edge.parent, []);
     childrenByParent.get(edge.parent).push(edge);
   });
+  const isLinear = [...childrenByParent.values()].every((children) => children.length <= 1);
   return `
-    <section class="evolution-card stats-card">
-      <div class="section-header"><h2>Evolution</h2></div>
-      <div class="evolution-chain">
+    <section class="evolution-card stats-card${isLinear ? ' evolution-card-linear' : ''}">
+      <div class="section-header"><h2>Evolution Tree</h2></div>
+      <div class="evolution-chain${isLinear ? ' evolution-chain-linear' : ''}">
         <div class="evolution-tree">${renderEvolutionNode(root, childrenByParent)}</div>
       </div>
     </section>`;
@@ -8068,10 +8438,10 @@ function renderPokedexSection(pokemon) {
           if (entry) {
             const gradientColor = getGameGradientColor(entry.game) || '#38bdf8';
             const gradient = gradientColor.startsWith('rgba(') ? gradientColor : hexToRgba(gradientColor, 0.18);
-            return `<div class="pokedex-entry-box" style="background: linear-gradient(360deg, rgba(15,23,32,0.92), ${gradient});"><div class="pokedex-entry-game">${escapeHtml(entry.game)}</div><div class="pokedex-entry-text">${escapeHtml(entry.entry)}</div></div>`;
+            return `<div class="pokedex-entry-box" style="background: linear-gradient(360deg, rgba(15,23,32,0.92), ${gradient});">${renderPokedexEntryGameTitle(entry.game)}<div class="pokedex-entry-text">${escapeHtml(entry.entry)}</div></div>`;
           }
 
-          return `<div class="pokedex-entry-box pokedex-no-entry"><div class="pokedex-entry-game">${escapeHtml(column.game)}</div><div class="pokedex-entry-text">No Dex Entry</div></div>`;
+          return `<div class="pokedex-entry-box pokedex-no-entry">${renderPokedexEntryGameTitle(column.game)}<div class="pokedex-entry-text">No Dex Entry</div></div>`;
         })
         .join('')
     : `<div class="pokedex-empty">No entries available for Generation ${selectedPokedexGen}.</div>`;
