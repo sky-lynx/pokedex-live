@@ -19,6 +19,7 @@ const GENERATION_MOVE_SHEET_URLS = [
 ];
 const SHEET_CACHE_DB_NAME = 'interactive-pokedex-cache';
 const SHEET_CACHE_STORE_NAME = 'sheets';
+const SHEET_CACHE_ENABLED_KEY = 'pokedexSheetCacheEnabled';
 
 const TYPE_COLORS = {
   Normal: '#A8A77A',
@@ -109,6 +110,8 @@ const elements = {
   pokemonList: document.getElementById('pokemonList'),
   listCount: document.getElementById('listCount'),
   status: document.getElementById('status'),
+  cacheEnabledToggle: document.getElementById('cacheEnabledToggle'),
+  cacheDataStatus: document.getElementById('cacheDataStatus'),
   details: document.getElementById('details'),
   randomButton: document.getElementById('randomButton'),
   collectionView: document.getElementById('collectionView'),
@@ -192,6 +195,10 @@ const elements = {
   teamCount: document.getElementById('teamCount'),
   teamSelector: document.getElementById('teamSelector'),
   teamNameInput: document.getElementById('teamNameInput'),
+  teamShareCode: document.getElementById('teamShareCode'),
+  copyTeamShareCode: document.getElementById('copyTeamShareCode'),
+  importTeamShareCode: document.getElementById('importTeamShareCode'),
+  teamShareStatus: document.getElementById('teamShareStatus'),
   teamPokemonTabs: document.getElementById('teamPokemonTabs'),
   teamRoster: document.getElementById('teamRoster'),
   teamOverview: document.getElementById('teamOverview'),
@@ -328,6 +335,7 @@ let authMode = 'login';
 let customFavoriteFilter = 'any';
 let customNoteFilter = 'any';
 let sheetCacheDatabasePromise;
+const sheetDataComparisons = new Map();
 const PROFILE_STORAGE_KEY = 'pokedexLocalProfiles';
 const COLLECTION_STATUSES = [
   { key: 'unseen', label: 'Unseen', shortLabel: 'U' },
@@ -352,6 +360,35 @@ window.addEventListener('DOMContentLoaded', () => {
 
 async function initialize() {
   applyProfileAppearance();
+  elements.cacheEnabledToggle.checked = isSheetCacheEnabled();
+  updatePokemonDataSourceText();
+  updateCacheDataStatus();
+  elements.cacheEnabledToggle.addEventListener('change', () => {
+    try {
+      localStorage.setItem(SHEET_CACHE_ENABLED_KEY, String(elements.cacheEnabledToggle.checked));
+      sheetDataComparisons.clear();
+      updatePokemonDataSourceText();
+      updateCacheDataStatus();
+    } catch (error) {
+      console.error('Unable to save the data cache preference.', error);
+      elements.cacheEnabledToggle.checked = localStorage.getItem(SHEET_CACHE_ENABLED_KEY) !== 'false';
+      updatePokemonDataSourceText();
+    }
+  });
+  window.addEventListener('offline', () => {
+    elements.status.textContent = 'Offline — using saved data where available.';
+    elements.status.hidden = false;
+  });
+  window.addEventListener('online', () => {
+    if (elements.status?.textContent.startsWith('Offline —')) {
+      elements.status.textContent = '';
+      elements.status.hidden = true;
+    }
+  });
+  if (!navigator.onLine) {
+    elements.status.textContent = 'Offline — using saved data where available.';
+    elements.status.hidden = false;
+  }
   bindProfileControls();
   bindCollectionControls();
   bindProfileDashboard();
@@ -369,7 +406,6 @@ async function initialize() {
     const pokemon = allPokemon[Number(card.dataset.pokemonIndex)];
     if (pokemon) selectPokemon(pokemon);
   });
-  elements.status.textContent = 'Loading sheet data from Google...';
   let pokemonDataLoaded = false;
   try {
     const [rawRows, pokedexRows] = await Promise.all([
@@ -396,14 +432,18 @@ async function initialize() {
     bindPokemonComparisonControls();
     renderComparePokemonOptions();
     renderPokemonComparison();
-    elements.status.textContent = `Loaded ${allPokemon.length} Pokémon.`;
     refreshCollectionUI();
     if (selectedDex === 'profile') renderProfileDashboard();
     pokemonDataLoaded = true;
+    elements.details.setAttribute('aria-busy', 'false');
   } catch (error) {
     console.error(error);
-    elements.status.textContent = 'Unable to load sheet data. Check network access or sheet visibility.';
+    elements.status.textContent = navigator.onLine
+      ? 'Unable to load sheet data. Check network access or sheet visibility.'
+      : `Offline — ${error.message}`;
+    elements.status.hidden = false;
     elements.details.innerHTML = `<div class="details-placeholder"><h2>Unable to load data</h2><p>Please ensure the Google Sheet is published publicly or try again later.</p></div>`;
+    elements.details.setAttribute('aria-busy', 'false');
   }
 
   elements.searchInput.addEventListener('input', handleSearch);
@@ -594,6 +634,8 @@ async function initialize() {
   elements.teamNameInput?.addEventListener('change', (event) => {
     renameActiveTeam(event.currentTarget.value);
   });
+  elements.copyTeamShareCode?.addEventListener('click', copyActiveTeamShareCode);
+  elements.importTeamShareCode?.addEventListener('click', importTeamShareCode);
   elements.teamRoster?.addEventListener('click', (event) => {
     const abilityToggle = event.target.closest('[data-team-ability-toggle]');
     if (abilityToggle) {
@@ -900,7 +942,8 @@ function loadSupportingData() {
     } catch (error) {
       abilityDataPromise = null;
       console.error('Unable to load ability data', error);
-      elements.status.textContent = `Loaded ${allPokemon.length} Pokémon, but ability descriptions could not be loaded.`;
+      elements.status.textContent = 'Ability descriptions could not be loaded.';
+      elements.status.hidden = false;
     }
   })();
   return abilityDataPromise;
@@ -931,7 +974,8 @@ function loadMoveDexData() {
     moveDexDataPromise = null;
     moveDataLoadFailed = true;
     console.error('Unable to load move data', error);
-    elements.status.textContent = `Loaded ${allPokemon.length} Pokémon, but move data could not be loaded.`;
+    elements.status.textContent = 'Move data could not be loaded.';
+    elements.status.hidden = false;
     if (selectedDex === 'compare') renderPokemonComparison();
     if (selectedDex === 'calculator') renderDamageMoveOptions();
   });
@@ -948,7 +992,8 @@ function loadMoveDescriptions() {
   }).catch((error) => {
     moveDescriptionsDataPromise = null;
     console.error('Unable to load move descriptions', error);
-    elements.status.textContent = `Loaded ${allPokemon.length} Pokémon and moves, but move descriptions could not be loaded.`;
+    elements.status.textContent = 'Move descriptions could not be loaded.';
+    elements.status.hidden = false;
   });
   return moveDescriptionsDataPromise;
 }
@@ -1297,7 +1342,7 @@ function initializeDexView(dex) {
     renderDamageMoveOptions();
     if (moveDataLoaded) calculateDamage();
     if (!moveDataLoaded) {
-      document.getElementById('damageCalculatorStatus').textContent = 'Loading move data…';
+      document.getElementById('damageCalculatorStatus').textContent = 'Loading move data';
       loadMoveDexData();
     }
     return;
@@ -1311,6 +1356,7 @@ function initializeDexView(dex) {
   if (dex === 'team') {
     loadMovesetGeneration(9);
     renderTeamBuilder();
+    populateActiveTeamShareCode();
     if (!moveDataLoaded) loadMoveDexData();
     return;
   }
@@ -1494,9 +1540,9 @@ function renderDamageMoveOptions() {
     return;
   }
   if (!moveDataLoaded) {
-    value.textContent = 'Loading moves…';
+    value.textContent = 'Loading moves';
     toggle.disabled = true;
-    options.innerHTML = '<p class="damage-move-empty">Loading moves…</p>';
+    options.innerHTML = '<p class="damage-move-empty">Loading moves</p>';
     return;
   }
 
@@ -2072,7 +2118,7 @@ function renderProfileDashboard() {
             <div class="profile-record-title"><span class="profile-record-kind">${escapeHtml(kind)}</span><strong>${escapeHtml(label)}</strong>${isFavorite ? '<span class="profile-record-favorite" aria-label="Favorite">★</span>' : ''}</div>
             <label class="profile-note-editor">
               <span class="visually-hidden">Personal note for ${escapeHtml(label)}</span>
-              <textarea rows="2" maxlength="500" data-profile-note-input placeholder="Add a personal note...">${escapeHtml(note)}</textarea>
+              <textarea rows="2" maxlength="500" data-profile-note-input placeholder="Add a personal note">${escapeHtml(note)}</textarea>
             </label>
           </div>
           <div class="profile-record-actions">
@@ -2341,7 +2387,10 @@ function confirmDeleteCurrentLocalProfile() {
   if (selectedDex === 'team') renderTeamBuilder();
   refreshCollectionUI();
   switchDexView('pokemon');
-  if (elements.status) elements.status.textContent = 'Local profile deleted.';
+  if (elements.status) {
+    elements.status.textContent = 'Local profile deleted.';
+    elements.status.hidden = false;
+  }
 }
 
 function positionProfileDeleteConfirmation() {
@@ -3405,31 +3454,69 @@ async function writeCachedSheetRows(key, rows) {
 }
 
 async function loadCachedSheetRows(key, loader) {
+  if (!isSheetCacheEnabled()) {
+    if (!navigator.onLine) throw new Error(`Turn on saved data or reconnect to load ${key} data.`);
+    const cachedRows = await readCachedSheetRows(key);
+    const rows = await loader();
+    if (rows.length) {
+      if (cachedRows) {
+        sheetDataComparisons.set(key, JSON.stringify(cachedRows) === JSON.stringify(rows));
+      } else {
+        sheetDataComparisons.set(key, null);
+      }
+      updateCacheDataStatus();
+      await writeCachedSheetRows(key, rows);
+    }
+    return rows;
+  }
+
   const cachedRows = await readCachedSheetRows(key);
   if (cachedRows) {
-    scheduleSheetRefresh(key, loader);
+    updateCacheDataStatus();
     return cachedRows;
   }
 
+  if (!navigator.onLine) {
+    throw new Error(`No saved ${key} data is available while offline.`);
+  }
   const rows = await loader();
   if (rows.length) await writeCachedSheetRows(key, rows);
   return rows;
 }
 
-function scheduleSheetRefresh(key, loader) {
-  const refresh = () => {
-    loader()
-      .then(async (rows) => {
-        if (!rows.length) return;
-        await writeCachedSheetRows(key, rows);
-        if (key === 'pokedex' && allPokemon.length) applyPokedexSheetData(rows);
-      })
-      .catch((error) => console.warn(`Unable to refresh cached ${key} sheet data`, error));
-  };
-  if ('requestIdleCallback' in window) {
-    window.requestIdleCallback(refresh, { timeout: 5000 });
+function isSheetCacheEnabled() {
+  return localStorage.getItem(SHEET_CACHE_ENABLED_KEY) !== 'false';
+}
+
+function updatePokemonDataSourceText() {
+  const heading = document.getElementById('pokemonDataSourceText');
+  if (!heading) return;
+  heading.textContent = isSheetCacheEnabled()
+    ? 'Loading cached data'
+    : 'Loading online data';
+}
+
+function updateCacheDataStatus(message) {
+  if (!elements.cacheDataStatus) return;
+  if (message) {
+    elements.cacheDataStatus.textContent = message;
+    return;
+  }
+  if (isSheetCacheEnabled()) {
+    elements.cacheDataStatus.textContent = 'Loading cached data. Turn this off and reload to check for updates.';
+    return;
+  }
+  const comparisons = [...sheetDataComparisons.entries()];
+  if (!comparisons.length) {
+    elements.cacheDataStatus.textContent = 'Reload to check cached data with online data.';
+    return;
+  }
+  if (comparisons.some(([, isMatch]) => isMatch === false)) {
+    elements.cacheDataStatus.textContent = 'Some cached data does not match with online data.';
+  } else if (comparisons.some(([, isMatch]) => isMatch === null)) {
+    elements.cacheDataStatus.textContent = 'Some cached data could not be checked with online data.';
   } else {
-    window.setTimeout(refresh, 1000);
+    elements.cacheDataStatus.textContent = 'All cached data matches online data.';
   }
 }
 
@@ -4802,6 +4889,458 @@ function renameActiveTeam(name) {
   renderTeamManagement();
 }
 
+function setTeamShareStatus(message, isError = false) {
+  if (!elements.teamShareStatus) return;
+  elements.teamShareStatus.textContent = message;
+  elements.teamShareStatus.hidden = !message;
+  elements.teamShareStatus.classList.toggle('is-error', isError);
+}
+
+function decodeShareBytes(encoded) {
+  const base64 = encoded.replace(/-/g, '+').replace(/_/g, '/');
+  const binary = atob(base64);
+  return Uint8Array.from(binary, (character) => character.charCodeAt(0));
+}
+
+function getTeamShareAbilityIdLookup() {
+  const headerIndex = abilitySheetRows.findIndex((row) => (
+    String(row[0] || '').trim() === 'Dex #'
+    && String(row[1] || '').trim() === 'Ability'
+  ));
+  if (headerIndex < 0) throw new Error('Ability IDs are unavailable in the loaded sheet.');
+
+  const byName = new Map();
+  const byId = new Map();
+  abilitySheetRows.slice(headerIndex + 1).forEach((row) => {
+    const id = String(row[0] || '').trim();
+    const name = String(row[1] || '').trim();
+    if (!/^\d+$/.test(id) || !name) return;
+    byName.set(normalizePokemonName(name), id);
+    byId.set(id, name);
+  });
+  return { byName, byId };
+}
+
+function expandCompactTeamSharePayload(compact, abilityIds) {
+  if (!compact || typeof compact !== 'object' || Array.isArray(compact) || !Array.isArray(compact.p)) {
+    throw new Error('The compact code does not contain a valid team.');
+  }
+  const team = compact.p.map((reference) => {
+    if (!Array.isArray(reference) || reference.length !== 3) {
+      throw new Error('The compact code contains an invalid Pokémon reference.');
+    }
+    const [number, mainDex, name] = reference.map((value) => String(value ?? ''));
+    const pokemon = allPokemon.find((entry) => (
+      entry.number === number && entry.mainDex === mainDex && entry.name === name
+    ));
+    if (!pokemon) throw new Error('A Pokémon in this code is not available in this Pokédex.');
+    return getPokemonKey(pokemon);
+  });
+  const expandSettings = (settings, transform = (value) => value) => Object.entries(settings || {}).reduce((result, [index, value]) => {
+    const teamIndex = Number(index);
+    if (!Number.isInteger(teamIndex) || teamIndex < 0 || teamIndex >= team.length) {
+      throw new Error('The compact code contains invalid team settings.');
+    }
+    result[team[teamIndex]] = transform(value);
+    return result;
+  }, {});
+  const abilities = expandSettings(compact.a, (id) => {
+    const name = abilityIds.byId.get(String(id));
+    if (!name) throw new Error('An ability ID in this code is not available in the loaded sheet.');
+    return name;
+  });
+  return {
+    name: compact.n,
+    team,
+    teamMoves: expandSettings(compact.m),
+    teamStats: expandSettings(compact.s),
+    teamAbilities: abilities,
+    teamTeraTypes: expandSettings(compact.r)
+  };
+}
+
+function getNumericTeamSharePokemonLookups() {
+  const grouped = new Map();
+  allPokemon.forEach((pokemon) => {
+    if (!/^\d+$/.test(String(pokemon.number))) {
+      throw new Error(`Could not create a numeric ID for Pokémon "${pokemon.name}".`);
+    }
+    if (!grouped.has(pokemon.number)) grouped.set(pokemon.number, []);
+    grouped.get(pokemon.number).push(pokemon);
+  });
+
+  const byKey = new Map();
+  const byId = new Map();
+  grouped.forEach((forms, number) => {
+    const primary = forms.find((pokemon) => pokemon.mainDex === number) || forms[0];
+    const orderedForms = [primary, ...forms.filter((pokemon) => pokemon !== primary)];
+    orderedForms.forEach((pokemon, formIndex) => {
+      const id = `${Number(number)}.${formIndex}`;
+      byKey.set(getPokemonKey(pokemon), id);
+      byId.set(id, pokemon);
+    });
+  });
+  return { byKey, byId };
+}
+
+function buildNumericTeamShareCode(slot, abilityIds) {
+  const pokemonIds = getNumericTeamSharePokemonLookups().byKey;
+  const teamIndexes = new Map();
+  const team = slot.team.map((key, index) => {
+    const id = pokemonIds.get(key);
+    if (!id) throw new Error('A Pokémon in this team is not available in the loaded data.');
+    teamIndexes.set(key, String(index));
+    return id;
+  });
+  const serializeIndexedSettings = (settings, transform = (value) => value) => Object.entries(settings || {})
+    .map(([pokemonKey, value]) => {
+      const index = teamIndexes.get(pokemonKey);
+      return index === undefined ? '' : `${index}:${transform(value)}`;
+    })
+    .filter(Boolean)
+    .join(';');
+  const moveSettings = serializeIndexedSettings(slot.teamMoves, (moves) => {
+    if (!Array.isArray(moves)) throw new Error('The team contains invalid move settings.');
+    return moves.filter(Boolean).map((id) => {
+      if (!/^\d+$/.test(String(id))) throw new Error('A move does not have a numeric sheet ID.');
+      return String(Number(id));
+    }).join(',');
+  });
+  const abilitySettings = serializeIndexedSettings(slot.teamAbilities, (ability) => {
+    const id = abilityIds.byName.get(normalizePokemonName(ability));
+    if (!id) throw new Error(`Could not find a sheet ID for the ability "${ability}".`);
+    return id;
+  });
+  const natureNames = Object.keys(NATURES);
+  const statSettings = serializeIndexedSettings(slot.teamStats, (settings) => {
+    const current = getTeamStatSettingsForShare(settings);
+    const natureIndex = natureNames.indexOf(current.nature);
+    if (natureIndex < 0) throw new Error('The team contains an unknown nature.');
+    return [
+      current.level,
+      natureIndex,
+      ...TEAM_STAT_KEYS.map((stat) => current.ivs[stat]),
+      ...TEAM_STAT_KEYS.map((stat) => current.evs[stat])
+    ].join(',');
+  });
+  const teraTypes = [...TYPE_ORDER, 'Stellar'];
+  const teraSettings = serializeIndexedSettings(slot.teamTeraTypes, (type) => {
+    const index = teraTypes.indexOf(type);
+    if (index < 0) throw new Error('The team contains an unknown Tera type.');
+    return index;
+  });
+  const name = encodeURIComponent(slot.name).replace(/~/g, '%7E');
+  return `TEAM~${name}~${team.join(',')}~${moveSettings}~${abilitySettings}~${statSettings}~${teraSettings}`;
+}
+
+function getTeamStatSettingsForShare(saved) {
+  const savedIvs = saved?.ivs && typeof saved.ivs === 'object' ? saved.ivs : {};
+  const savedEvs = saved?.evs && typeof saved.evs === 'object' ? saved.evs : {};
+  const ivs = {};
+  const evs = {};
+  TEAM_STAT_KEYS.forEach((stat) => {
+    const iv = Number(savedIvs[stat]);
+    const ev = Number(savedEvs[stat]);
+    ivs[stat] = Number.isFinite(iv) ? Math.max(0, Math.min(31, Math.floor(iv))) : 31;
+    evs[stat] = Number.isFinite(ev) ? Math.max(0, Math.min(252, Math.floor(ev))) : 0;
+  });
+  const level = Number(saved?.level);
+  return {
+    level: Number.isFinite(level) ? Math.max(1, Math.min(100, Math.floor(level))) : 50,
+    nature: Object.prototype.hasOwnProperty.call(NATURES, saved?.nature) ? saved.nature : 'Hardy',
+    ivs,
+    evs
+  };
+}
+
+function expandNumericTeamShareCode(code, abilityIds) {
+  const parts = code.split('~');
+  if (parts.length !== 7 || parts[0] !== 'TEAM') throw new Error('Enter a valid team share code.');
+  const pokemonIds = getNumericTeamSharePokemonLookups().byId;
+  const team = parts[2] ? parts[2].split(',').map((id) => {
+    if (!/^\d+\.\d+$/.test(id)) throw new Error('The code contains an invalid Pokémon ID.');
+    const pokemon = pokemonIds.get(id);
+    if (!pokemon) throw new Error('A Pokémon in this code is not available in this Pokédex.');
+    return getPokemonKey(pokemon);
+  }) : [];
+  const parseIndexedSettings = (value, transform = (entry) => entry) => {
+    if (!value) return {};
+    return value.split(';').reduce((result, entry) => {
+      const separator = entry.indexOf(':');
+      if (separator <= 0) throw new Error('The code contains invalid team settings.');
+      const index = Number(entry.slice(0, separator));
+      if (!Number.isInteger(index) || index < 0 || index >= team.length) throw new Error('The code contains invalid team settings.');
+      result[team[index]] = transform(entry.slice(separator + 1));
+      return result;
+    }, {});
+  };
+  const teamMoves = parseIndexedSettings(parts[3], (value) => value ? value.split(',').map((id) => {
+    if (!/^\d+$/.test(id)) throw new Error('The code contains an invalid move ID.');
+    return String(Number(id));
+  }) : []);
+  const teamAbilities = parseIndexedSettings(parts[4], (id) => {
+    if (!/^\d+$/.test(id)) throw new Error('The code contains an invalid ability ID.');
+    const name = abilityIds.byId.get(String(Number(id)));
+    if (!name) throw new Error('An ability ID in this code is not available in the loaded sheet.');
+    return name;
+  });
+  const natureNames = Object.keys(NATURES);
+  const teamStats = parseIndexedSettings(parts[5], (value) => {
+    const values = value.split(',').map(Number);
+    if (values.length !== 14 || values.some((entry) => !Number.isInteger(entry))) {
+      throw new Error('The code contains invalid stat settings.');
+    }
+    const [level, natureIndex, ...stats] = values;
+    if (natureIndex < 0 || natureIndex >= natureNames.length) throw new Error('The code contains an invalid nature ID.');
+    const ivs = Object.fromEntries(TEAM_STAT_KEYS.map((stat, index) => [stat, stats[index]]));
+    const evs = Object.fromEntries(TEAM_STAT_KEYS.map((stat, index) => [stat, stats[index + TEAM_STAT_KEYS.length]]));
+    return { level, nature: natureNames[natureIndex], ivs, evs };
+  });
+  const teraTypes = [...TYPE_ORDER, 'Stellar'];
+  const teamTeraTypes = parseIndexedSettings(parts[6], (value) => {
+    if (!/^\d+$/.test(value) || Number(value) >= teraTypes.length) throw new Error('The code contains an invalid Tera type ID.');
+    return teraTypes[Number(value)];
+  });
+  let name;
+  try {
+    name = decodeURIComponent(parts[1]);
+  } catch (error) {
+    throw new Error('The team name in this code is invalid.');
+  }
+  return {
+    name,
+    team,
+    teamMoves,
+    teamAbilities,
+    teamStats,
+    teamTeraTypes
+  };
+}
+
+async function readStreamBytes(stream, maximumBytes) {
+  const reader = stream.getReader();
+  const chunks = [];
+  let byteLength = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    byteLength += value.length;
+    if (byteLength > maximumBytes) {
+      await reader.cancel();
+      throw new Error('The team code is too large.');
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(byteLength);
+  let offset = 0;
+  chunks.forEach((chunk) => {
+    bytes.set(chunk, offset);
+    offset += chunk.length;
+  });
+  return bytes;
+}
+
+async function copyActiveTeamShareCode() {
+  setTeamShareStatus('');
+  try {
+    const code = await generateActiveTeamShareCode();
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(code);
+    } else {
+      elements.teamShareCode.focus();
+      elements.teamShareCode.select();
+      document.execCommand('copy');
+    }
+  } catch (error) {
+    elements.teamShareCode.focus();
+    elements.teamShareCode.select();
+    setTeamShareStatus(error.message, true);
+  }
+}
+
+async function generateActiveTeamShareCode() {
+  const slot = getActiveTeamSlot();
+  let abilityIds = { byName: new Map(), byId: new Map() };
+  if (Object.keys(slot.teamAbilities).length) {
+    await loadSupportingData();
+    if (!abilityDataLoaded) throw new Error('Ability IDs could not be loaded for this team code.');
+    abilityIds = getTeamShareAbilityIdLookup();
+  }
+  const code = buildNumericTeamShareCode(slot, abilityIds);
+  elements.teamShareCode.value = code;
+  return code;
+}
+
+async function populateActiveTeamShareCode() {
+  try {
+    await generateActiveTeamShareCode();
+  } catch (error) {
+    setTeamShareStatus(error.message, true);
+  }
+}
+
+function validateImportedTeamSlot(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('The code does not contain a team.');
+  }
+  if (!Array.isArray(value.team) || value.team.length > TEAM_SIZE) {
+    throw new Error(`A team can contain up to ${TEAM_SIZE} Pokémon.`);
+  }
+  if (value.team.some((key) => typeof key !== 'string')) throw new Error('The code contains an invalid Pokémon key.');
+  const team = value.team;
+  if (new Set(team).size !== team.length) throw new Error('The team contains duplicate Pokémon.');
+  const unknown = team.find((key) => !pokemonByKey.has(key));
+  if (unknown) throw new Error('The team contains a Pokémon that is not available in this Pokédex.');
+
+  const teamMoves = {};
+  const teamStats = {};
+  const teamAbilities = {};
+  const teamTeraTypes = {};
+  team.forEach((key) => {
+    const moves = value.teamMoves?.[key];
+    if (moves !== undefined) {
+      if (!Array.isArray(moves) || moves.length > 4 || moves.some((move) => typeof move !== 'string' || move.length > 120)) {
+        throw new Error('The code contains invalid move settings.');
+      }
+      teamMoves[key] = moves;
+    }
+    const stats = value.teamStats?.[key];
+    if (stats !== undefined) {
+      if (!stats || typeof stats !== 'object' || Array.isArray(stats)) throw new Error('The code contains invalid stat settings.');
+      const { level, nature, ivs, evs } = stats;
+      if (!Number.isInteger(level) || level < 1 || level > 100 || !Object.prototype.hasOwnProperty.call(NATURES, nature)) {
+        throw new Error('The code contains invalid stat settings.');
+      }
+      if (!ivs || typeof ivs !== 'object' || !evs || typeof evs !== 'object') {
+        throw new Error('The code contains invalid stat settings.');
+      }
+      let totalEvs = 0;
+      const cleanIvs = {};
+      const cleanEvs = {};
+      TEAM_STAT_KEYS.forEach((stat) => {
+        if (!Number.isInteger(ivs[stat]) || ivs[stat] < 0 || ivs[stat] > 31
+          || !Number.isInteger(evs[stat]) || evs[stat] < 0 || evs[stat] > 252) {
+          throw new Error('The code contains invalid stat settings.');
+        }
+        totalEvs += evs[stat];
+        cleanIvs[stat] = ivs[stat];
+        cleanEvs[stat] = evs[stat];
+      });
+      if (totalEvs > 510) throw new Error('The code contains invalid stat settings.');
+      teamStats[key] = { level, nature, ivs: cleanIvs, evs: cleanEvs };
+    }
+    const ability = value.teamAbilities?.[key];
+    if (ability !== undefined) {
+      const pokemon = pokemonByKey.get(key);
+      if (typeof ability !== 'string' || !getTeamAbilityOptions(pokemon).some((option) => option.ability === ability)) {
+        throw new Error('The code contains an invalid ability selection.');
+      }
+      teamAbilities[key] = ability;
+    }
+    const teraType = value.teamTeraTypes?.[key];
+    if (teraType !== undefined) {
+      if (typeof teraType !== 'string' || ![...TYPE_ORDER, 'Stellar'].includes(teraType)) {
+        throw new Error('The code contains an invalid Tera type.');
+      }
+      teamTeraTypes[key] = teraType;
+    }
+  });
+
+  return {
+    name: typeof value.name === 'string' && value.name.trim() ? value.name.trim().slice(0, 24) : 'Imported Team',
+    team,
+    teamMoves,
+    teamStats,
+    teamAbilities,
+    teamTeraTypes
+  };
+}
+
+async function importTeamShareCode() {
+  setTeamShareStatus('');
+  try {
+    const code = elements.teamShareCode.value.trim();
+    if (code.length > 12000) throw new Error('Team code is too long.');
+    let payload;
+    const readableMatch = code.match(/^PL3~([^~]*)~([^~]*)~([A-Za-z0-9_-]*)$/);
+    const compressedMatch = code.match(/^(PL4|PL2|PLT1)-([A-Za-z0-9_-]+)$/);
+    if (code.startsWith('TEAM~')) {
+      const parts = code.split('~');
+      if (parts.length !== 7) throw new Error('Enter a valid team share code.');
+      if (parts[4]) {
+        await loadSupportingData();
+        if (!abilityDataLoaded) throw new Error('Ability IDs could not be loaded to import this team code.');
+      }
+      const abilityIds = parts[4]
+        ? getTeamShareAbilityIdLookup()
+        : { byName: new Map(), byId: new Map() };
+      payload = expandNumericTeamShareCode(code, abilityIds);
+    } else if (readableMatch) {
+      const settings = readableMatch[3]
+        ? await decodeCompressedTeamSettings(readableMatch[3])
+        : {};
+      payload = {
+        name: decodeURIComponent(readableMatch[1]),
+        team: readableMatch[2] ? readableMatch[2].split(',').map(decodeURIComponent) : [],
+        teamMoves: settings.m,
+        teamStats: settings.s,
+        teamAbilities: settings.a,
+        teamTeraTypes: settings.r
+      };
+    } else if (compressedMatch) {
+      const bytes = decodeShareBytes(compressedMatch[2]);
+      if (compressedMatch[1] === 'PL4' || compressedMatch[1] === 'PL2') {
+        if (typeof DecompressionStream === 'undefined') throw new Error('This browser does not support compressed team codes.');
+        const decompressed = await readStreamBytes(
+          new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip')),
+          65536
+        );
+        const compact = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(decompressed));
+        if (compressedMatch[1] === 'PL4') {
+          if (compact.a && Object.keys(compact.a).length) {
+            await loadSupportingData();
+            if (!abilityDataLoaded) throw new Error('Ability IDs could not be loaded to import this team code.');
+          }
+          const abilityIds = compact.a && Object.keys(compact.a).length
+            ? getTeamShareAbilityIdLookup()
+            : { byName: new Map(), byId: new Map() };
+          payload = expandCompactTeamSharePayload(compact, abilityIds);
+        } else {
+          payload = {
+            name: compact.n,
+            team: compact.p,
+            teamMoves: compact.m,
+            teamStats: compact.s,
+            teamAbilities: compact.a,
+            teamTeraTypes: compact.r
+          };
+        }
+      } else {
+        payload = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+      }
+    } else {
+      throw new Error('Enter a valid team share code.');
+    }
+    const slot = validateImportedTeamSlot(payload);
+    updateActiveTeamSlot(slot);
+    renderTeamManagement();
+    renderTeamBuilder();
+    setTeamShareStatus('');
+  } catch (error) {
+    setTeamShareStatus(`Could not import team: ${error.message}`, true);
+  }
+}
+
+async function decodeCompressedTeamSettings(encoded) {
+  if (typeof DecompressionStream === 'undefined') throw new Error('This browser does not support compressed team settings.');
+  const bytes = decodeShareBytes(encoded);
+  const decompressed = await readStreamBytes(
+    new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip')),
+    65536
+  );
+  return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(decompressed));
+}
+
 function getTeamStatSettings(pokemonKey) {
   const saved = getActiveTeamStats()[pokemonKey] || {};
   const savedIvs = saved.ivs && typeof saved.ivs === 'object' ? saved.ivs : {};
@@ -5484,7 +6023,7 @@ function renderPokemonComparison() {
       : '<p class="small">No moves are listed for this category.</p>'
     : moveDataLoadFailed
       ? '<p class="small">Move data could not be loaded. Check the connection and try again.</p>'
-      : '<p class="small">Loading move data…</p>';
+      : '<p class="small">Loading move data</p>';
 
   const tabButtons = detailTabs.map(([key, label]) =>
     `<button type="button" id="compare-tab-${key}" class="pokemon-detail-tab${selectedCompareDetailTab === key ? ' active' : ''}" role="tab" aria-selected="${selectedCompareDetailTab === key}" aria-controls="compare-panel-${key}" tabindex="${selectedCompareDetailTab === key ? '0' : '-1'}" data-content-tab="${key}">${label}</button>`
@@ -5630,7 +6169,9 @@ function renderTeamAnalysis(team) {
       const barWidth = maxValue ? Math.round(values[key] / maxValue * 100) : 0;
       return `<div class="team-stat-bar-row"><span>${escapeHtml(label)}</span><strong>${values[key]}</strong><span class="team-stat-bar-track"><i style="width:${barWidth}%;--team-stat-color:${color}"></i></span></div>`;
     }).join('');
-    return `<section class="team-stat-bar-member"><h4><i style="--team-stat-color:${color}"></i>${escapeHtml(pokemon.displayName || pokemon.name)}</h4>${stats}</section>`;
+    return `<section class="team-stat-bar-member">
+      <h4><i style="--team-stat-color:${color}"></i>${escapeHtml(pokemon.displayName || pokemon.name)}</h4>${stats}
+    </section>`;
   }).join('');
   const statComparison = team.length
     ? `<div class="team-stat-comparison">
@@ -5645,24 +6186,27 @@ function renderTeamAnalysis(team) {
         </svg>
         <div class="team-stat-radar-legend">${teamStatValues.map(({ pokemon }, index) => (
           `<div class="team-stat-radar-legend-item" data-team-stat-index="${index}">
-            <button type="button" class="team-stat-radar-legend-button"><i style="--team-stat-color:${radarColors[index % radarColors.length]}"></i>${escapeHtml(pokemon.displayName || pokemon.name)}</button>
+            <button type="button" class="team-stat-radar-legend-button" data-team-stat-select="${index}" aria-pressed="false"><i style="--team-stat-color:${radarColors[index % radarColors.length]}"></i>${escapeHtml(pokemon.displayName || pokemon.name)}</button>
           </div>`
         )).join('')}</div>
         </div>
         <div class="team-stat-bar-view team-stat-view"${selectedTeamStatView === 'bars' ? '' : ' hidden'}>${statBars}</div>
       </div>`
     : '<p class="small team-empty-message">Add Pokémon to compare their calculated stats.</p>';
-  const memberHeaders = (rows, includeMoves = false) => rows.map(({ pokemon, moves }) => `
+  const memberHeaders = (rows) => rows.map(({ pokemon }) => `
     <th scope="col"><span class="team-analysis-member team-analysis-column-member">
       <img src="sprites/${escapeHtml(getPokemonSpriteBase(pokemon))}.png" alt="" loading="lazy" />
-      <span><strong>${escapeHtml(pokemon.displayName || pokemon.name)}</strong><small>${pokemon.types.filter(Boolean).map(escapeHtml).join(' / ') || 'Unknown type'}</small>${includeMoves ? `<small>${moves.length ? moves.map((move) => `${escapeHtml(move.name)} · ${escapeHtml(move.type)}`).join(', ') : 'No damaging moves'}</small>` : ''}</span>
+      <span><strong>${escapeHtml(pokemon.displayName || pokemon.name)}</strong><small>${pokemon.types.filter(Boolean).map(escapeHtml).join(' / ') || 'Unknown type'}</small></span>
     </span></th>`).join('');
   const typeRowHeader = (type) => `<th scope="row" class="team-analysis-type-heading">${renderMoveTypePill(type)}</th>`;
-  const effectivenessCell = (value) => {
-    if (value === null) return '<td class="team-effectiveness-cell is-unavailable">—</td>';
+  const effectivenessCell = (value, extendedInfo = '') => {
+    const infoAttributes = extendedInfo
+      ? ` data-extended-info="${escapeHtml(extendedInfo)}" tabindex="0" aria-label="${escapeHtml(extendedInfo)}"`
+      : '';
+    if (value === null) return `<td class="team-effectiveness-cell is-unavailable"${infoAttributes}>—</td>`;
     const label = value === 0 ? '0×' : `${value < 1 ? Number(value.toFixed(2)) : value}×`;
     const state = value === 0 ? 'immune' : value > 1 ? 'weak' : value < 1 ? 'resist' : 'neutral';
-    return `<td class="team-effectiveness-cell is-${state}" title="${label} effectiveness">${label}</td>`;
+    return `<td class="team-effectiveness-cell is-${state}"${infoAttributes}>${label}</td>`;
   };
   const defensiveTable = `<div class="team-analysis-table-wrap"><table class="team-analysis-table">
     <thead><tr><th scope="col">Attack type</th>${memberHeaders(defensiveRows)}</tr></thead>
@@ -5684,10 +6228,23 @@ function renderTeamAnalysis(team) {
     <p class="team-analysis-note">Per type: Pokémon weak / resistant / immune to that attack.</p>
   </aside>`;
   const offensiveTable = `<div class="team-analysis-table-wrap"><table class="team-analysis-table">
-    <thead><tr><th scope="col">Target type</th>${memberHeaders(offensiveRows, true)}</tr></thead>
+    <thead><tr><th scope="col">Target type</th>${memberHeaders(offensiveRows)}</tr></thead>
     <tbody>${TYPE_ORDER.map((type, typeIndex) => `<tr>
       ${typeRowHeader(type)}
-      ${offensiveRows.map(({ multipliers }) => effectivenessCell(multipliers[typeIndex])).join('')}
+      ${offensiveRows.map(({ pokemon, moves, multipliers }) => {
+        const moveDetails = moves.map((move) => {
+          const multiplier = getTypeMultiplier(move.type, type);
+          const effectiveness = multiplier === 0 ? '0×' : `${multiplier < 1 ? Number(multiplier.toFixed(2)) : multiplier}×`;
+          const state = multiplier === 0 ? 'immune' : multiplier > 1 ? 'weak' : multiplier < 1 ? 'resist' : 'neutral';
+          return { name: move.name, type: move.type, effectiveness, state };
+        });
+        const extendedInfo = JSON.stringify({
+          pokemonName: pokemon.displayName || pokemon.name,
+          matchup: `${type} matchup`,
+          moves: moveDetails
+        });
+        return effectivenessCell(multipliers[typeIndex], extendedInfo);
+      }).join('')}
     </tr>`).join('')}</tbody>
   </table></div>`;
   const coveredTypes = offensiveTotals.filter(({ attackers }) => attackers > 0).length;
@@ -5698,21 +6255,21 @@ function renderTeamAnalysis(team) {
       <div><strong>${selectedMoves.length}</strong><span>damaging moves selected</span></div>
     </div>
     <div class="team-analysis-type-summary">${offensiveTotals.map(({ type, attackers }) => `
-      <div class="team-analysis-type-summary-row">${renderMoveTypePill(type)}<span><b class="${attackers ? 'is-resist' : ''}">${attackers}</b> Pokémon</span></div>`).join('')}
+      <div class="team-analysis-type-summary-row">${renderMoveTypePill(type)}<span><b class="${attackers ? 'is-resist' : ''}">${attackers}</b></span></div>`).join('')}
     </div>
-    <p class="team-analysis-note">The matrix shows the strongest selected move against each single defending type.</p>
+    <p class="team-analysis-note">Coverage uses selected damaging moves and shows each Pokémon’s strongest move against a single defending type.</p>
   </aside>`;
   elements.teamAnalysis.innerHTML = `
     <div class="section-tabs" role="tablist" aria-label="Team analysis" data-content-tab-group="team">
       <button type="button" class="section-tab${selectedTeamAnalysisTab === 'defensive' ? ' active' : ''}" role="tab" aria-selected="${selectedTeamAnalysisTab === 'defensive'}" aria-controls="team-analysis-panel-defensive" tabindex="${selectedTeamAnalysisTab === 'defensive' ? '0' : '-1'}" data-content-tab="defensive">Defensive</button>
-      <button type="button" class="section-tab${selectedTeamAnalysisTab === 'offensive' ? ' active' : ''}" role="tab" aria-selected="${selectedTeamAnalysisTab === 'offensive'}" aria-controls="team-analysis-panel-offensive" tabindex="${selectedTeamAnalysisTab === 'offensive' ? '0' : '-1'}" data-content-tab="offensive">Offensive</button>
+      <button type="button" class="section-tab${selectedTeamAnalysisTab === 'offensive' ? ' active' : ''}" role="tab" aria-selected="${selectedTeamAnalysisTab === 'offensive'}" aria-controls="team-analysis-panel-offensive" tabindex="${selectedTeamAnalysisTab === 'offensive' ? '0' : '-1'}" data-content-tab="offensive">Type Coverage</button>
       <button type="button" class="section-tab${selectedTeamAnalysisTab === 'stats' ? ' active' : ''}" role="tab" aria-selected="${selectedTeamAnalysisTab === 'stats'}" aria-controls="team-analysis-panel-stats" tabindex="${selectedTeamAnalysisTab === 'stats' ? '0' : '-1'}" data-content-tab="stats">Stats</button>
     </div>
     <section id="team-analysis-panel-defensive" class="content-tab-panel${selectedTeamAnalysisTab === 'defensive' ? ' active' : ''}" role="tabpanel" data-content-panel="defensive"${selectedTeamAnalysisTab === 'defensive' ? '' : ' hidden'}>
       ${team.length ? `<div class="team-analysis-matrix-layout">${defensiveTable}${defensiveSummary}</div>` : '<p class="small team-empty-message">Add Pokémon to see defensive matchups.</p>'}
     </section>
     <section id="team-analysis-panel-offensive" class="content-tab-panel${selectedTeamAnalysisTab === 'offensive' ? ' active' : ''}" role="tabpanel" data-content-panel="offensive"${selectedTeamAnalysisTab === 'offensive' ? '' : ' hidden'}>
-      ${team.length ? `<div class="team-analysis-matrix-layout">${offensiveTable}${offensiveSummary}</div>` : '<p class="small team-empty-message">Add Pokémon and plan moves to see offensive coverage.</p>'}
+      ${team.length ? `<div class="team-analysis-matrix-layout">${offensiveTable}${offensiveSummary}</div>` : '<p class="small team-empty-message">Add Pokémon and select damaging moves to see type coverage.</p>'}
     </section>`;
   elements.teamAnalysis.insertAdjacentHTML('beforeend', `
     <section id="team-analysis-panel-stats" class="content-tab-panel${selectedTeamAnalysisTab === 'stats' ? ' active' : ''}" role="tabpanel" data-content-panel="stats"${selectedTeamAnalysisTab === 'stats' ? '' : ' hidden'}>
@@ -5720,10 +6277,90 @@ function renderTeamAnalysis(team) {
         ${statComparison}
       </section>
     </section>`);
+  bindTeamAnalysisTooltips();
   bindContentTabs(elements.teamAnalysis, 'team', (key) => {
     selectedTeamAnalysisTab = key;
   });
   bindTeamStatComparison();
+}
+
+function bindTeamAnalysisTooltips() {
+  const container = elements.teamAnalysis;
+  if (!container || container.dataset.tooltipsBound) return;
+  container.dataset.tooltipsBound = 'true';
+
+  const tooltip = document.createElement('div');
+  tooltip.className = 'team-analysis-tooltip';
+  tooltip.setAttribute('role', 'tooltip');
+  tooltip.hidden = true;
+  document.body.appendChild(tooltip);
+
+  let pinnedCell = null;
+  const hide = () => {
+    pinnedCell = null;
+    tooltip.hidden = true;
+  };
+  const show = (cell) => {
+    let details;
+    try {
+      details = JSON.parse(cell.dataset.extendedInfo);
+    } catch (error) {
+      console.error('Could not display Type Coverage move details.', error);
+      hide();
+      return;
+    }
+    tooltip.innerHTML = `
+      <strong class="team-analysis-tooltip-title">${escapeHtml(details.pokemonName)}</strong>
+      <span class="team-analysis-tooltip-subtitle">${escapeHtml(details.matchup)}</span>
+      <div class="team-analysis-tooltip-move-list">
+        <div class="team-analysis-tooltip-move-heading"><span>Move</span><span>Type</span><span>Effect</span></div>
+        ${details.moves.length
+          ? details.moves.map((move) => `<div class="team-analysis-tooltip-move">
+              <span class="team-analysis-tooltip-move-name">${escapeHtml(move.name)}</span>
+              ${renderMoveTypePill(move.type)}
+              <span class="team-analysis-effectiveness is-${escapeHtml(move.state)}">${escapeHtml(move.effectiveness)}</span>
+            </div>`).join('')
+          : '<p class="team-analysis-tooltip-empty">No attacks selected</p>'}
+      </div>`;
+    tooltip.hidden = false;
+
+    const rect = cell.getBoundingClientRect();
+    const halfWidth = tooltip.offsetWidth / 2;
+    const left = Math.max(halfWidth + 8, Math.min(window.innerWidth - halfWidth - 8, rect.left + rect.width / 2));
+    const top = rect.bottom + tooltip.offsetHeight + 8 <= window.innerHeight
+      ? rect.bottom + 8
+      : Math.max(8, rect.top - tooltip.offsetHeight - 8);
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${top}px`;
+  };
+
+  container.addEventListener('pointerover', (event) => {
+    const cell = event.target.closest('[data-extended-info]');
+    if (cell && container.contains(cell) && (!pinnedCell || pinnedCell === cell)) show(cell);
+  });
+  container.addEventListener('pointerout', (event) => {
+    const cell = event.target.closest('[data-extended-info]');
+    if (cell && !pinnedCell && !cell.contains(event.relatedTarget)) hide();
+  });
+  container.addEventListener('click', (event) => {
+    const cell = event.target.closest('[data-extended-info]');
+    if (!cell || !container.contains(cell)) return;
+    pinnedCell = cell;
+    show(cell);
+  });
+  container.addEventListener('focusin', (event) => {
+    const cell = event.target.closest('[data-extended-info]');
+    if (cell && container.contains(cell) && (!pinnedCell || pinnedCell === cell)) show(cell);
+  });
+  container.addEventListener('focusout', (event) => {
+    const cell = event.target.closest('[data-extended-info]');
+    if (cell && !pinnedCell && !cell.contains(event.relatedTarget)) hide();
+  });
+  document.addEventListener('click', (event) => {
+    if (pinnedCell && !pinnedCell.contains(event.target)) hide();
+  });
+  window.addEventListener('scroll', hide, true);
+  window.addEventListener('resize', hide);
 }
 
 function bindTeamStatComparison() {
@@ -5742,40 +6379,65 @@ function bindTeamStatComparison() {
       view.hidden = !view.classList.contains(`team-stat-${selectedTeamStatView === 'bars' ? 'bar' : 'radar'}-view`);
     });
   });
-  const setHighlightedPokemon = (index) => {
-    comparison.dataset.highlightedTeamStat = index;
+  let selectedIndex = null;
+  let hoveredIndex = null;
+  const updatePokemonHighlight = () => {
+    const highlightedIndex = hoveredIndex ?? selectedIndex;
+    if (highlightedIndex === null) delete comparison.dataset.highlightedTeamStat;
+    else comparison.dataset.highlightedTeamStat = highlightedIndex;
+
     comparison.querySelectorAll('.team-stat-radar-series').forEach((series) => {
-      series.classList.toggle('is-highlighted', series.dataset.teamStatIndex === index);
-      series.classList.toggle('is-dimmed', series.dataset.teamStatIndex !== index);
+      const selected = series.dataset.teamStatIndex === String(highlightedIndex);
+      const isHovered = series.dataset.teamStatIndex === hoveredIndex;
+      const filtered = selectedIndex !== null && series.dataset.teamStatIndex !== selectedIndex && !isHovered;
+      series.classList.toggle('is-highlighted', highlightedIndex !== null && selected);
+      series.classList.toggle('is-dimmed', highlightedIndex !== null && !selected);
+      series.classList.toggle('is-filtered', filtered);
     });
     comparison.querySelectorAll('.team-stat-radar-values').forEach((values) => {
-      values.classList.toggle('is-active', values.dataset.teamStatIndex === index);
+      values.classList.toggle('is-active', highlightedIndex !== null && values.dataset.teamStatIndex === String(highlightedIndex));
+      const isHovered = values.dataset.teamStatIndex === hoveredIndex;
+      values.classList.toggle('is-filtered', selectedIndex !== null && values.dataset.teamStatIndex !== selectedIndex && !isHovered);
+    });
+    comparison.querySelectorAll('[data-team-stat-select]').forEach((button) => {
+      button.setAttribute('aria-pressed', button.dataset.teamStatSelect === selectedIndex);
     });
   };
-  const clearHighlightedPokemon = () => {
-    delete comparison.dataset.highlightedTeamStat;
-    comparison.querySelectorAll('.team-stat-radar-series').forEach((series) => {
-      series.classList.remove('is-highlighted', 'is-dimmed');
-    });
-    comparison.querySelectorAll('.team-stat-radar-values').forEach((values) => {
-      values.classList.remove('is-active');
-    });
-  };
+  comparison.addEventListener('click', (event) => {
+    const button = event.target.closest('[data-team-stat-select]');
+    if (!button) return;
+    const index = button.dataset.teamStatSelect;
+    selectedIndex = selectedIndex === index ? null : index;
+    hoveredIndex = null;
+    updatePokemonHighlight();
+  });
   comparison.addEventListener('pointerover', (event) => {
     const item = event.target.closest('.team-stat-radar-legend-item');
-    if (item) setHighlightedPokemon(item.dataset.teamStatIndex);
+    if (item) {
+      hoveredIndex = item.dataset.teamStatIndex;
+      updatePokemonHighlight();
+    }
   });
   comparison.addEventListener('pointerout', (event) => {
     const item = event.target.closest('.team-stat-radar-legend-item');
-    if (item && !item.contains(event.relatedTarget)) clearHighlightedPokemon();
+    if (item && !item.contains(event.relatedTarget)) {
+      hoveredIndex = null;
+      updatePokemonHighlight();
+    }
   });
   comparison.addEventListener('focusin', (event) => {
     const item = event.target.closest('.team-stat-radar-legend-item');
-    if (item) setHighlightedPokemon(item.dataset.teamStatIndex);
+    if (item) {
+      hoveredIndex = item.dataset.teamStatIndex;
+      updatePokemonHighlight();
+    }
   });
   comparison.addEventListener('focusout', (event) => {
     const item = event.target.closest('.team-stat-radar-legend-item');
-    if (item && !item.contains(event.relatedTarget)) clearHighlightedPokemon();
+    if (item && !item.contains(event.relatedTarget)) {
+      hoveredIndex = null;
+      updatePokemonHighlight();
+    }
   });
 }
 
@@ -5910,7 +6572,7 @@ function renderTeamRoster(team) {
 
 function renderTeamMovePlanner(pokemon) {
   if (moveDataLoadFailed) return renderUnavailableTeamMovePlanner(pokemon, 'Move data could not be loaded');
-  if (!moveDataLoaded) return renderUnavailableTeamMovePlanner(pokemon, 'Loading move data…');
+  if (!moveDataLoaded) return renderUnavailableTeamMovePlanner(pokemon, 'Loading move data');
   const moves = getPokemonTeamMoves(pokemon);
   if (!moves.length) return renderUnavailableTeamMovePlanner(pokemon, 'No moves available');
   const teamMoves = getActiveTeamMoves();
@@ -5931,7 +6593,7 @@ function renderTeamMovePlanner(pokemon) {
     const triggerContent = selectedMove
       ? `<span class="team-move-trigger-name">${escapeHtml(selectedMove.name)}</span>${renderMoveTypePill(selectedMove.type)}${renderMoveCategoryBadge(selectedMove.category)}`
       : '<span class="team-move-placeholder">Choose a move</span>';
-    return `<div class="team-move-slot"><span class="team-move-slot-label">Move ${slot + 1}</span><div class="team-move-picker" data-team-move-slot="${slot}" data-team-pokemon-key="${escapeHtml(getPokemonKey(pokemon))}"><button type="button" class="team-move-trigger" data-team-move-toggle aria-haspopup="listbox" aria-expanded="false" aria-label="Move ${slot + 1} for ${escapeHtml(pokemon.displayName || pokemon.name)}"><span class="team-move-trigger-copy">${triggerContent}</span><span class="team-form-chevron" aria-hidden="true"></span></button><div class="team-move-menu" aria-label="Choose move ${slot + 1} for ${escapeHtml(pokemon.displayName || pokemon.name)}" hidden><input type="search" class="team-move-search" placeholder="Search moves..." autocomplete="off" aria-label="Search moves for move slot ${slot + 1}" /><div class="team-move-options" role="listbox" aria-label="Move options">${options}<p class="team-move-no-results" hidden>No moves match your search.</p></div></div></div></div>`;
+    return `<div class="team-move-slot"><span class="team-move-slot-label">Move ${slot + 1}</span><div class="team-move-picker" data-team-move-slot="${slot}" data-team-pokemon-key="${escapeHtml(getPokemonKey(pokemon))}"><button type="button" class="team-move-trigger" data-team-move-toggle aria-haspopup="listbox" aria-expanded="false" aria-label="Move ${slot + 1} for ${escapeHtml(pokemon.displayName || pokemon.name)}"><span class="team-move-trigger-copy">${triggerContent}</span><span class="team-form-chevron" aria-hidden="true"></span></button><div class="team-move-menu" aria-label="Choose move ${slot + 1} for ${escapeHtml(pokemon.displayName || pokemon.name)}" hidden><input type="search" class="team-move-search" placeholder="Search moves" autocomplete="off" aria-label="Search moves for move slot ${slot + 1}" /><div class="team-move-options" role="listbox" aria-label="Move options">${options}<p class="team-move-no-results" hidden>No moves match your search.</p></div></div></div></div>`;
   }).join('');
   return `<section class="team-move-planner" data-team-move-planner="${escapeHtml(getPokemonKey(pokemon))}"><div class="team-move-planner-heading"><h4>Move plan</h4><span>${count} / 4 selected</span></div><div class="team-move-slots">${slots}</div></section>`;
 }
@@ -6297,7 +6959,7 @@ function renderMoveLearnersSection(move) {
   let learnersByCategory = {};
 
   if (!generationData || generationData.status === 'loading') {
-    learnerNotice = `<p class="moveset-status">Loading move data for Generation ${selectedMoveLearnerGeneration}...</p>`;
+    learnerNotice = `<p class="moveset-status">Loading move data for Generation ${selectedMoveLearnerGeneration}</p>`;
   } else if (generationData.status === 'error') {
     learnerNotice = `<p class="moveset-status">Move data for Generation ${selectedMoveLearnerGeneration} could not be loaded. Select this generation to try again.</p>`;
   } else if (!generationData.gamesets.length) {
@@ -8138,7 +8800,7 @@ function renderPersonalTools(item, itemType = 'pokemon') {
       <div class="personal-tool-panel note-panel">
         <div class="note-editor">
           <label for="${noteId}">Personal note${currentUsername ? ` for ${escapeHtml(currentUsername)}` : ''}</label>
-          <textarea id="${noteId}" class="pokemon-note" rows="2" maxlength="500" placeholder="Add a private note..." ${currentUsername ? '' : 'disabled'}>${escapeHtml(note)}</textarea>
+          <textarea id="${noteId}" class="pokemon-note" rows="2" maxlength="500" placeholder="Add a private note" ${currentUsername ? '' : 'disabled'}>${escapeHtml(note)}</textarea>
           <div class="note-actions">
             <button type="button" class="save-note-button"${currentUsername ? '' : ' disabled'}>Save note</button>
             <span class="note-saved-message" aria-live="polite"></span>
@@ -8481,7 +9143,7 @@ function renderMovesetSection(pokemon) {
   let movesetNotice = '';
 
   if (!generationData || generationData.status === 'loading') {
-    movesetNotice = `<p class="moveset-status">Loading move data for Generation ${selectedMovesetGeneration}...</p>`;
+    movesetNotice = `<p class="moveset-status">Loading move data for Generation ${selectedMovesetGeneration}</p>`;
   } else if (generationData.status === 'error') {
     movesetNotice = `<p class="moveset-status">Move data for Generation ${selectedMovesetGeneration} could not be loaded. Select this generation to try again.</p>`;
   } else if (!generationData.gamesets.length) {

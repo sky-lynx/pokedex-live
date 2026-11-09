@@ -23,14 +23,14 @@
             <button id="pokedexTab" class="dex-tab active" type="button" role="tab" aria-label="PokéDex" aria-selected="true" aria-controls="pokedexView"><span class="dex-tab-full">PokéDex</span><span class="dex-tab-short" aria-hidden="true">Dex</span></button>
             <button id="movedexTab" class="dex-tab" type="button" role="tab" aria-label="MoveDex" aria-selected="false" aria-controls="movedexView"><span class="dex-tab-full">MoveDex</span><span class="dex-tab-short" aria-hidden="true">Moves</span></button>
             <button id="abilitydexTab" class="dex-tab" type="button" role="tab" aria-label="AbilityDex" aria-selected="false" aria-controls="abilitydexView"><span class="dex-tab-full">AbilityDex</span><span class="dex-tab-short" aria-hidden="true">Abilities</span></button>
-            <button id="pokemonCompareTab" class="dex-tab" type="button" role="tab" aria-label="Compare Pokémon" aria-selected="false" aria-controls="pokemonCompareView"><span class="dex-tab-full">Compare</span><span class="dex-tab-short" aria-hidden="true">Compare</span></button>
-            <button id="damageCalculatorTab" class="dex-tab" type="button" role="tab" aria-label="Damage Calculator" aria-selected="false" aria-controls="damageCalculatorView"><span class="dex-tab-full">Damage Calc</span><span class="dex-tab-short" aria-hidden="true">Damage</span></button>
+            <button id="pokemonCompareTab" class="dex-tab" type="button" role="tab" aria-label="Compare" aria-selected="false" aria-controls="pokemonCompareView"><span class="dex-tab-full">Compare</span><span class="dex-tab-short" aria-hidden="true">Compare</span></button>
+            <button id="damageCalculatorTab" class="dex-tab" type="button" role="tab" aria-label="Damage Calc" aria-selected="false" aria-controls="damageCalculatorView"><span class="dex-tab-full">Damage Calc</span><span class="dex-tab-short" aria-hidden="true">Damage</span></button>
             <button id="teamBuilderTab" class="dex-tab" type="button" role="tab" aria-label="Team Builder" aria-selected="false" aria-controls="teamBuilderView"><span class="dex-tab-full">Team Builder</span><span class="dex-tab-short" aria-hidden="true">Teams</span><span class="dex-tab-lock" aria-hidden="true">🔒</span></button>
             <button id="collectionTab" class="dex-tab" type="button" role="tab" aria-label="Collection" aria-selected="false" aria-controls="collectionView"><span class="dex-tab-full">Collection</span><span class="dex-tab-short" aria-hidden="true">Collect</span><span class="dex-tab-lock" aria-hidden="true">🔒</span></button>
             <button id="profileTab" class="dex-tab" type="button" role="tab" aria-label="My Profile" aria-selected="false" aria-controls="profileView"><span class="dex-tab-full">My Profile</span><span class="dex-tab-short" aria-hidden="true">Profile</span></button>
           </div>
         </div>
-        <div id="status" class="status-message">Loading sheet data...</div>
+        <div id="status" class="status-message" role="status" hidden></div>
       </div>
     </header>
 
@@ -40,7 +40,7 @@
           <div class="search-row">
             <label for="searchInput">Search Pokémon</label>
             <div class="pokedex-search-controls">
-              <input id="searchInput" type="search" placeholder="Search a Pokémon..." autocomplete="off" />
+              <input id="searchInput" type="search" placeholder="Search Pokémon" autocomplete="off" />
               <button id="gridViewButton" type="button" class="button grid-view-button" aria-pressed="false">Grid</button>
             </div>
           </div>
@@ -225,9 +225,13 @@
       </aside>
 
       <section class="panel panel-right" id="detailsPanel">
-        <div id="details" class="details-placeholder">
-          <h2>Pokémon details will appear here</h2>
-          <p>No Pokémon selected.</p>
+        <div id="details" class="details-placeholder dex-data-placeholder" aria-busy="true">
+          <h2 id="pokemonDataSourceText">Loading online data</h2>
+          <div class="dex-loading-skeleton" aria-hidden="true">
+            <span class="dex-loading-line"></span>
+            <span class="dex-loading-line"></span>
+            <span class="dex-loading-line"></span>
+          </div>
         </div>
       </section>
     </main>
@@ -237,7 +241,7 @@
         <section class="list-card">
           <div class="search-row">
             <label for="moveSearchInput">Search moves</label>
-            <input id="moveSearchInput" type="search" placeholder="Search a move..." autocomplete="off" />
+            <input id="moveSearchInput" type="search" placeholder="Search moves" autocomplete="off" />
           </div>
           <div class="section-header">
             <h2>Moves</h2>
@@ -333,7 +337,7 @@
         <section class="list-card">
           <div class="search-row">
             <label for="abilitySearchInput">Search abilities or Pokémon</label>
-            <input id="abilitySearchInput" type="search" placeholder="Search an ability..." autocomplete="off" />
+            <input id="abilitySearchInput" type="search" placeholder="Search abilities" autocomplete="off" />
           </div>
           <div class="section-header">
             <h2>Abilities</h2>
@@ -411,7 +415,7 @@
         <section class="list-card">
           <div class="search-row">
             <label for="teamPokemonSearch">Find Pokémon</label>
-            <input id="teamPokemonSearch" type="search" placeholder="Search by name, number, or type..." autocomplete="off" />
+            <input id="teamPokemonSearch" type="search" placeholder="Search by name, number, or type" autocomplete="off" />
           </div>
           <div class="section-header">
             <h2>Pokémon</h2>
@@ -429,6 +433,16 @@
           <div class="team-management">
             <div id="teamSelector" class="team-selector" role="group" aria-label="Saved teams"></div>
           </div>
+          <details class="team-share">
+            <summary>Share team code</summary>
+            <label for="teamShareCode">Team code</label>
+            <textarea id="teamShareCode" rows="3" autocomplete="off" spellcheck="false" aria-describedby="teamShareStatus"></textarea>
+            <div class="team-share-actions">
+              <button id="copyTeamShareCode" type="button" class="collection-utility-button">Copy team code</button>
+              <button id="importTeamShareCode" type="button" class="collection-utility-button">Import team</button>
+            </div>
+            <p id="teamShareStatus" class="team-share-status" role="status" aria-live="polite" hidden></p>
+          </details>
         </section>
         <div class="section-tabs team-builder-tabs" role="tablist" aria-label="Team Builder sections" data-content-tab-group="team-builder">
           <button type="button" class="section-tab active" role="tab" aria-selected="true" aria-controls="team-builder-panel-roster" tabindex="0" data-content-tab="roster">Teams</button>
@@ -455,7 +469,7 @@
         <section class="list-card">
           <div class="search-row">
             <label for="comparePokemonSearch">Find Pokémon</label>
-            <input id="comparePokemonSearch" type="search" placeholder="Search by name, number, or type..." autocomplete="off" />
+            <input id="comparePokemonSearch" type="search" placeholder="Search by name, number, or type" autocomplete="off" />
           </div>
           <div class="section-header">
             <h2>Pokémon</h2>
@@ -489,7 +503,7 @@
             </div>
             <p class="damage-picker-hint">Choose who you’re setting, then select a Pokémon below.</p>
             <label class="damage-search-label" for="damagePokemonSearch">Search Pokémon</label>
-            <input id="damagePokemonSearch" type="search" placeholder="Name, number, or type..." autocomplete="off" />
+            <input id="damagePokemonSearch" type="search" placeholder="Name, number, or type" autocomplete="off" />
           </div>
           <div id="damagePokemonList" class="pokemon-list damage-pokemon-list" aria-label="Pokémon"></div>
         </section>
@@ -506,11 +520,11 @@
               <label class="damage-field-label" for="damageMoveToggle">Attack move</label>
               <div class="damage-move-picker">
                 <button id="damageMoveToggle" type="button" class="damage-move-trigger" aria-haspopup="listbox" aria-expanded="false" disabled>
-                  <span id="damageMoveValue">Loading moves…</span>
+                  <span id="damageMoveValue">Loading moves</span>
                   <span class="damage-move-chevron" aria-hidden="true"></span>
                 </button>
                 <div id="damageMoveMenu" class="damage-move-menu" role="listbox" aria-label="Choose an attack move" hidden>
-                  <input id="damageMoveSearch" class="damage-move-search" type="search" placeholder="Search moves..." autocomplete="off" />
+                  <input id="damageMoveSearch" class="damage-move-search" type="search" placeholder="Search moves" autocomplete="off" />
                   <div id="damageMoveOptions" class="damage-move-options"></div>
                 </div>
               </div>
@@ -655,6 +669,11 @@
             <input id="profileReduceSpriteLoad" type="checkbox" />
             <span><strong>Reduce sprite load</strong><small>Remove sprites from Pokémon lists and Collection to reduce image loading.</small></span>
           </label>
+          <label class="profile-compact-toggle" for="cacheEnabledToggle">
+            <input id="cacheEnabledToggle" type="checkbox" />
+            <span><strong>Use data saved on this device</strong><small>Reuse Pokédex, move, and ability data saved in this browser instead of downloading it again.</small></span>
+          </label>
+          <p id="cacheDataStatus" class="profile-save-status cache-data-status" role="status" aria-live="polite"></p>
           <button id="resetProfileAppearance" type="button" class="collection-utility-button">Reset appearance</button>
         </section>
         <section class="profile-account-section" aria-labelledby="profileAccountTitle">
