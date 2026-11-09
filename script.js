@@ -118,7 +118,6 @@ const elements = {
   collectionEntries: document.getElementById('collectionEntries'),
   collectionSearch: document.getElementById('collectionSearch'),
   collectionStatusFilter: document.getElementById('collectionStatusFilter'),
-  collectionShinyFilter: document.getElementById('collectionShinyFilter'),
   collectionSortButton: document.getElementById('collectionSortButton'),
   collectionFormsFilter: document.getElementById('collectionFormsFilter'),
   collectionGenerations: document.getElementById('collectionGenerations'),
@@ -316,7 +315,6 @@ let collectionEntriesRenderToken = 0;
 let collectionEntriesRenderFrame = null;
 let currentUsername = localStorage.getItem('pokedexCurrentUser') || '';
 let collectionSortOrder = 'dex';
-let collectionShinyOnly = false;
 let collectionGenerationFilter = 'all';
 let collectionGamesetFilter = 'all';
 let collectionShowAllForms = false;
@@ -2547,20 +2545,29 @@ function getVisibleCollectionSpecies(species = getCollectionSpecies(), collectio
   const selectedStatus = elements.collectionStatusFilter?.dataset.value || 'all';
   const visibleSpecies = species.filter((pokemon) => {
     const status = getCollectionStatusFromData(pokemon, collection);
+    const isShiny = isPokemonShinyFromData(pokemon, shiny);
     const matchesQuery = !query
       || String(pokemon.displayName || pokemon.name).toLowerCase().includes(query)
       || pokemon.name.toLowerCase().includes(query)
       || String(pokemon.number).toLowerCase().includes(query);
+    const matchesStatus = selectedStatus === 'all'
+      || (selectedStatus === 'shiny' && isShiny)
+      || (selectedStatus === 'not-shiny' && !isShiny)
+      || (COLLECTION_STATUSES.some(({ key }) => key === selectedStatus) && status === selectedStatus);
     return matchesQuery
-      && (selectedStatus === 'all' || status === selectedStatus)
+      && matchesStatus
       && (collectionGenerationFilter === 'all' || getCollectionGeneration(pokemon) === collectionGenerationFilter)
-      && (collectionGamesetFilter === 'all' || isPokemonInCollectionGameset(pokemon, collectionGamesetFilter))
-      && (!collectionShinyOnly || isPokemonShinyFromData(pokemon, shiny));
+      && (collectionGamesetFilter === 'all' || isPokemonInCollectionGameset(pokemon, collectionGamesetFilter));
   });
   if (collectionSortOrder === 'name') {
     visibleSpecies.sort((left, right) =>
       String(left.displayName || left.name).localeCompare(String(right.displayName || right.name))
     );
+  } else if (collectionSortOrder === 'not-shiny') {
+    visibleSpecies.sort((left, right) => (
+      Number(isPokemonShinyFromData(left, shiny)) - Number(isPokemonShinyFromData(right, shiny))
+      || Number(left.number) - Number(right.number)
+    ));
   }
   return visibleSpecies;
 }
@@ -2597,12 +2604,15 @@ function cancelCollectionEntriesRender() {
 function renderCollectionEntries(species, totalSpecies) {
   const entries = elements.collectionEntries;
   if (!entries) return;
+  const previousScrollTop = entries.scrollTop;
   cancelCollectionEntriesRender();
   if (!totalSpecies) {
+    entries.scrollTop = 0;
     entries.innerHTML = '<p class="collection-empty">Pokémon data is still loading.</p>';
     return;
   }
   if (!species.length) {
+    entries.scrollTop = 0;
     entries.innerHTML = '<p class="collection-empty">No Pokémon match these search and status filters.</p>';
     return;
   }
@@ -2662,6 +2672,7 @@ function renderCollectionEntries(species, totalSpecies) {
       collectionEntriesRenderFrame = requestAnimationFrame(appendBatch);
     } else {
       collectionEntriesRenderFrame = null;
+      entries.scrollTop = Math.max(0, Math.min(previousScrollTop, entries.scrollHeight - entries.clientHeight));
     }
   };
 
@@ -2783,32 +2794,17 @@ function renderCollectionProgress(renderEntries = selectedDex === 'collection') 
   const progressLabel = view.querySelector('#collectionProgressLabel');
   const shinyProgressFill = view.querySelector('#collectionShinyProgressFill');
   const shinyProgressLabel = view.querySelector('#collectionShinyProgressLabel');
-  const statusCounts = view.querySelector('#collectionStatusCounts');
   if (progressFill) progressFill.style.width = `${collectedPercent}%`;
   if (progressLabel) progressLabel.textContent = `${collectedPercentLabel}% (${counts.caught.toLocaleString()} / ${species.length.toLocaleString()})`;
   if (shinyProgressFill) shinyProgressFill.style.width = `${shinyPercent}%`;
   if (shinyProgressLabel) shinyProgressLabel.textContent = `${shinyPercentLabel}% (${shinyCount.toLocaleString()} / ${species.length.toLocaleString()})`;
-  if (statusCounts) {
-    const countItems = statusCounts.querySelectorAll('.collection-count');
-    if (countItems.length !== COLLECTION_STATUSES.length + 1) {
-      statusCounts.innerHTML = COLLECTION_STATUSES
-        .map((status) => `<div class="collection-count"><span>${status.label} (${status.shortLabel})</span><strong>${counts[status.key].toLocaleString()}</strong></div>`)
-        .concat(`<div class="collection-count"><span>Shinies</span><strong>${shinyCount.toLocaleString()}</strong></div>`)
-        .join('');
-    } else {
-      COLLECTION_STATUSES.forEach((status, index) => {
-        const count = countItems[index].querySelector('strong');
-        if (count) count.textContent = counts[status.key].toLocaleString();
-      });
-      const shinyValue = countItems[COLLECTION_STATUSES.length].querySelector('strong');
-      if (shinyValue) shinyValue.textContent = shinyCount.toLocaleString();
-    }
-  }
 
   const statusCountsByKey = Object.fromEntries(COLLECTION_STATUSES.map((status) => [status.key, counts[status.key]]));
+  statusCountsByKey.shiny = shinyCount;
+  statusCountsByKey['not-shiny'] = species.length - shinyCount;
   elements.collectionStatusFilter?.querySelectorAll('[data-collection-filter-count]').forEach((count) => {
     const key = count.dataset.collectionFilterCount;
-    count.textContent = key === 'all' ? species.length.toLocaleString() : statusCountsByKey[key].toLocaleString();
+    count.textContent = key === 'all' ? species.length.toLocaleString() : (statusCountsByKey[key] || 0).toLocaleString();
   });
   renderCollectionGenerations(species, collection);
   renderCollectionGamesets(species, collection);
@@ -2837,12 +2833,6 @@ function bindCollectionControls() {
     });
     renderCollectionProgress(true);
   });
-  elements.collectionShinyFilter?.addEventListener('click', () => {
-    collectionShinyOnly = !collectionShinyOnly;
-    elements.collectionShinyFilter.setAttribute('aria-pressed', String(collectionShinyOnly));
-    elements.collectionShinyFilter.classList.toggle('active', collectionShinyOnly);
-    renderCollectionProgress(true);
-  });
   elements.collectionFormsFilter?.addEventListener('click', () => {
     collectionShowAllForms = !collectionShowAllForms;
     elements.collectionFormsFilter.setAttribute('aria-pressed', String(collectionShowAllForms));
@@ -2851,11 +2841,13 @@ function bindCollectionControls() {
     renderCollectionProgress(true);
   });
   elements.collectionSortButton?.addEventListener('click', () => {
-    collectionSortOrder = collectionSortOrder === 'dex' ? 'name' : 'dex';
-    elements.collectionSortButton.textContent = `Sort: ${collectionSortOrder === 'dex' ? 'Pokédex #' : 'Name'}`;
+    collectionSortOrder = ({ dex: 'name', name: 'not-shiny', 'not-shiny': 'dex' })[collectionSortOrder];
+    const sortLabels = { dex: 'Pokédex #', name: 'Name', 'not-shiny': 'Not shiny first' };
+    const nextSortLabel = { dex: 'name', name: 'not shiny first', 'not-shiny': 'Pokédex number' };
+    elements.collectionSortButton.textContent = `Sort: ${sortLabels[collectionSortOrder]}`;
     elements.collectionSortButton.setAttribute(
       'aria-label',
-      `Sort collection by ${collectionSortOrder === 'dex' ? 'name' : 'Pokédex number'}`
+      `Sort collection by ${nextSortLabel[collectionSortOrder]}`
     );
     renderCollectionProgress(true);
   });

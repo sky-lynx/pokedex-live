@@ -3755,11 +3755,10 @@ button, input {
 }
 
 .collection-filter-tabs {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   min-width: 0;
-  align-self: stretch;
-  align-items: center;
-  justify-content: space-between;
+  align-items: stretch;
   gap: 0.25rem;
   padding: 0.22rem;
   border: 1px solid rgba(148, 163, 184, 0.16);
@@ -3782,10 +3781,19 @@ button, input {
   white-space: nowrap;
 }
 
-.collection-filter-tab span {
-  margin-left: 0.15rem;
+.collection-filter-tab {
+  display: grid;
+  justify-items: center;
+  gap: 0.08rem;
+  padding: 0.3rem 0.12rem;
+  font-size: 0.68rem;
+  line-height: 1.05;
+}
+
+.collection-filter-tab-count {
   color: inherit;
-  font-size: 0.72rem;
+  font-size: 0.62rem;
+  line-height: 1;
   opacity: 0.72;
 }
 
@@ -4508,14 +4516,21 @@ button, input {
   }
 
   .collection-filter-tabs {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
   }
 
   .collection-filter-tab {
-    padding-right: 0.3rem;
-    padding-left: 0.3rem;
-    font-size: 0.72rem;
+    padding: 0.25rem 0.04rem;
+    font-size: 0.6rem;
+  }
+
+  .collection-filter-tab-count {
+    font-size: 0.55rem;
+  }
+
+  .collection-toolbar input {
+    padding: 0.5rem 0.65rem;
+    font-size: 0.78rem;
   }
 
   .collection-view-controls {

@@ -555,7 +555,6 @@
               <div class="collection-progress-track"><div id="collectionShinyProgressFill" class="collection-progress-fill"></div></div>
             </div>
           </div>
-          <div id="collectionStatusCounts" class="collection-status-counts"></div>
         </section>
         <section class="collection-generations-section" aria-labelledby="collectionGenerationsTitle">
           <div class="collection-section-heading">
@@ -570,7 +569,7 @@
           <div class="collection-section-heading">
             <div>
               <h3 id="collectionGamesetsTitle">Game-set progress</h3>
-1            </div>
+            </div>
             <button id="collectionGamesetReset" type="button" class="collection-utility-button active" aria-pressed="true">All game sets</button>
           </div>
           <div id="collectionGamesets" class="collection-gamesets"></div>
@@ -583,17 +582,18 @@
           <div class="collection-control-group">
             <span class="collection-control-label">Collection status</span>
             <div id="collectionStatusFilter" class="collection-filter-tabs" role="tablist" aria-label="Filter collection by status" data-value="all">
-              <button type="button" class="collection-filter-tab active" role="tab" aria-selected="true" data-collection-filter-option="all">All <span data-collection-filter-count="all">0</span></button>
-              <button type="button" class="collection-filter-tab" role="tab" aria-selected="false" data-collection-filter-option="unseen">Unseen <span data-collection-filter-count="unseen">0</span></button>
-              <button type="button" class="collection-filter-tab" role="tab" aria-selected="false" data-collection-filter-option="seen">Seen <span data-collection-filter-count="seen">0</span></button>
-              <button type="button" class="collection-filter-tab" role="tab" aria-selected="false" data-collection-filter-option="caught">Caught <span data-collection-filter-count="caught">0</span></button>
+              <button type="button" class="collection-filter-tab active" role="tab" aria-selected="true" data-collection-filter-option="all"><span class="collection-filter-tab-label">All</span><span class="collection-filter-tab-count" data-collection-filter-count="all">0</span></button>
+              <button type="button" class="collection-filter-tab" role="tab" aria-selected="false" data-collection-filter-option="unseen"><span class="collection-filter-tab-label">Unseen</span><span class="collection-filter-tab-count" data-collection-filter-count="unseen">0</span></button>
+              <button type="button" class="collection-filter-tab" role="tab" aria-selected="false" data-collection-filter-option="seen"><span class="collection-filter-tab-label">Seen</span><span class="collection-filter-tab-count" data-collection-filter-count="seen">0</span></button>
+              <button type="button" class="collection-filter-tab" role="tab" aria-selected="false" data-collection-filter-option="caught"><span class="collection-filter-tab-label">Caught</span><span class="collection-filter-tab-count" data-collection-filter-count="caught">0</span></button>
+              <button type="button" class="collection-filter-tab" role="tab" aria-selected="false" data-collection-filter-option="shiny"><span class="collection-filter-tab-label">Shiny</span><span class="collection-filter-tab-count" data-collection-filter-count="shiny">0</span></button>
+              <button type="button" class="collection-filter-tab" role="tab" aria-selected="false" data-collection-filter-option="not-shiny"><span class="collection-filter-tab-label">Not shiny</span><span class="collection-filter-tab-count" data-collection-filter-count="not-shiny">0</span></button>
             </div>
           </div>
           <div class="collection-control-group">
             <span class="collection-control-label">Display options</span>
             <div class="collection-view-controls">
-              <button id="collectionShinyFilter" type="button" class="collection-utility-button" aria-pressed="false">Shinies only</button>
-              <button id="collectionSortButton" type="button" class="collection-utility-button" aria-label="Sort collection alphabetically">Sort: Pokédex #</button>
+              <button id="collectionSortButton" type="button" class="collection-utility-button" aria-label="Sort collection by name">Sort: Pokédex #</button>
               <button id="collectionFormsFilter" type="button" class="collection-utility-button" aria-pressed="false">Show all forms</button>
             </div>
           </div>
